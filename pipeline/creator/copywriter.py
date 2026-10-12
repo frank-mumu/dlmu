@@ -19,7 +19,7 @@ def write(topic, school=None, majors=None, raw_items=None):
     return _write_with_template(topic, school, majors)
 
 
-def _llm_chat(messages, temperature=0.7, max_tokens=1200):
+def _llm_chat(messages, temperature=0.7, max_tokens=2000):
     url = settings.llm_base_url.rstrip("/") + "/chat/completions"
     headers = {"Authorization": f"Bearer {settings.llm_api_key}",
                "Content-Type": "application/json"}

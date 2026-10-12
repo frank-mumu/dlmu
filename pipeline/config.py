@@ -1,6 +1,25 @@
-"""全局配置：全部来自环境变量，便于在不同环境（本机/执行机）复用同一份代码。"""
+"""全局配置：来自环境变量；若存在 .env 会先加载（不覆盖已存在的环境变量）。"""
 import os
 from dataclasses import dataclass, field
+
+
+def _load_dotenv(path: str = ".env") -> None:
+    """极简 .env 加载（不引入 python-dotenv 依赖）；不覆盖已有环境变量。"""
+    if not os.path.exists(path):
+        return
+    try:
+        with open(path, encoding="utf-8") as f:
+            for raw in f:
+                line = raw.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, val = line.split("=", 1)
+                os.environ.setdefault(key.strip(), val.strip().strip('"').strip("'"))
+    except OSError:
+        pass
+
+
+_load_dotenv()
 
 
 def _csv(name: str) -> list:
