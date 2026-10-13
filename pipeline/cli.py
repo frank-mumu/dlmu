@@ -181,6 +181,36 @@ def cmd_verify(args):
         print(f"          报告 -> {os.path.join(out_dir, '复核.md')}")
 
 
+def cmd_narrate(args):
+    """为已有草稿重新生成语音解说 mp3（用当前 TTS_PROVIDER/音色），不重渲图片。"""
+    from .creator import narrator
+    with session_scope() as session:
+        if args.topic:
+            try:
+                topic = session.get(Topic, int(args.topic))
+            except (ValueError, TypeError):
+                topic = None
+                for t in session.query(Topic).all():
+                    nm = (t.theme.name if t.theme else "") or t.title or ""
+                    if args.topic in nm or args.topic == (t.theme.key if t.theme else ""):
+                        topic = t
+                        break
+            drafts = [repo.latest_draft(session, topic.id)] if topic else []
+            drafts = [d for d in drafts if d]
+        else:
+            drafts = repo.list_drafts(session, status=args.status, limit=args.limit)
+        n = 0
+        for d in drafts:
+            if not d.assets:
+                continue
+            out_dir = os.path.dirname(d.assets[0])
+            audio = narrator.narrate({"title": d.title, "pages": d.pages or []}, out_dir)
+            if audio:
+                n += 1
+                print(f"[narrate] {d.title} -> {audio}")
+        print(f"[narrate] 共生成 {n} 条语音解说（provider={narrator.TTS_PROVIDER}）")
+
+
 def cmd_clone_voice(args):
     """用录音做 ElevenLabs 即时克隆音色，返回 voice_id；--save 写入 .env 并启用。"""
     from .creator import narrator
@@ -253,6 +283,12 @@ def main(argv=None):
                          help="干净录音文件(mp3/m4a/wav)，可多次传入；建议 1-5 分钟女声无背景音")
     p_clone.add_argument("--save", action="store_true", help="把 voice_id 写入 .env 并启用 elevenlabs")
     p_clone.set_defaults(func=cmd_clone_voice)
+
+    p_narr = sub.add_parser("narrate", help="为已有草稿重新生成语音解说(用当前音色)，不重渲图片")
+    p_narr.add_argument("--topic", help="Topic id 或 主题名；缺省全部草稿")
+    p_narr.add_argument("--status", help="按草稿状态过滤")
+    p_narr.add_argument("--limit", type=int, default=50)
+    p_narr.set_defaults(func=cmd_narrate)
 
     args = parser.parse_args(argv)
     args.func(args)
