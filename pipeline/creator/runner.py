@@ -117,6 +117,10 @@ def finalize_draft(session, topic, content):
     title = content["title"]
     subtitle = content.get("subtitle") or _subtitle(topic, school)
     pages = content.get("pages") or body_to_pages(content.get("body", ""), majors)
+    # 规范化 Agent 提供的分页：去掉 callout 里重复的「提示/重点：」前缀
+    for pg in pages:
+        if pg.get("callout"):
+            pg["callout"] = _clean_callout(pg["callout"].strip())
     closing = content.get("closing") or _default_closing(topic, school)
     body = content.get("body") or pages_to_body(title, pages, closing)
     footer = f"{school.name} · 考研干货" if school else "考研信息 · 干货分享"
@@ -152,26 +156,40 @@ def run(limit=3, period=None):
         return {"new_topics": len(new_topics), "draft_ids": draft_ids}
 
 
-def topics_brief(session, limit=5, period=None):
-    """产出候选选题的结构化简报(JSON 友好)，供创作 Agent(或人)据此写文案。"""
+def topics_brief(session, limit=30, period=None, theme_id=None):
+    """产出候选选题的结构化简报(JSON 友好)，供创作 Agent(或人)据此写文案。
+
+    每个选题附带：所属主题、受众、按主题标签检索到的近期原始素材(全网抓取结果)。
+    """
     selector.run(session, period=period)
-    topics = repo.pending_topics(session, limit=limit)
+    topics = repo.pending_topics(session, limit=limit, theme_id=theme_id)
     brief = []
     for t in topics:
         school = t.school
+        theme = t.theme
         majors = (session.query(Major).filter_by(school_id=school.id).limit(20).all()
                   if school else [])
-        items = (repo.recent_raw_items(session, school_id=school.id, limit=3)
-                 if school else [])
+        # 按主题标签检索全网抓取到的原始素材
+        raw = repo.recent_raw_items(
+            session, theme_key=theme.key if theme else None,
+            scope=school.name if school else "general", limit=5)
         brief.append({
-            "topic_id": t.id, "kind": t.kind, "topic_title": t.title,
+            "topic_id": t.id,
+            "kind": t.kind,
+            "period": t.period,
+            "topic_title": t.title,
+            "theme": ({"key": theme.key, "name": theme.name,
+                       "audience": theme.audience, "description": theme.description}
+                      if theme else None),
             "rationale": t.rationale,
             "school": ({"name": school.name, "province": school.province,
                         "level": school.level} if school else None),
             "majors": [{"code": m.code, "name": m.name, "degree_type": m.degree_type,
                         "direction": m.direction, "exam_subjects": m.exam_subjects}
                        for m in majors],
-            "ref_items": [{"title": it.title, "content": it.content} for it in items],
+            "ref_items": [{"title": it.title, "content": (it.content or "")[:1500],
+                           "url": it.url, "scope": it.scope}
+                          for it in raw],
         })
     return brief
 

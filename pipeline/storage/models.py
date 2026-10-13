@@ -28,6 +28,25 @@ class Source(Base):
     created_at = Column(DateTime, default=utcnow)
 
 
+class Theme(Base):
+    """内容主题（一次性定义）。选题引擎按主题×日期产出 topic。
+
+    scope: school=仅学校定向 / general=仅公共 / both=两者都生成。
+    audience: 学生 / 家长 / 通用。
+    search_templates: 全网抓取时使用的搜索词模板，{school} 占位符会被学校名替换。
+    """
+    __tablename__ = "themes"
+    id = Column(Integer, primary_key=True)
+    key = Column(String(64), unique=True, nullable=False)
+    name = Column(String(128), nullable=False)
+    description = Column(Text, nullable=True)
+    audience = Column(String(32), default="通用")       # 学生 / 家长 / 通用
+    scope = Column(String(16), default="both")          # school / general / both
+    search_templates = Column(JSON, default=list)
+    active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=utcnow)
+
+
 class School(Base):
     __tablename__ = "schools"
     id = Column(Integer, primary_key=True)
@@ -59,11 +78,13 @@ class RawItem(Base):
     id = Column(Integer, primary_key=True)
     source_id = Column(Integer, ForeignKey("sources.id"), nullable=True)
     school_id = Column(Integer, ForeignKey("schools.id"), nullable=True)
-    kind = Column(String(32), default="catalog")       # catalog / notice / news
+    kind = Column(String(32), default="catalog")       # catalog / notice / news / web
     title = Column(String(512))
     content = Column(Text, nullable=True)
     url = Column(Text, nullable=True)
     url_hash = Column(String(64), unique=True, nullable=True)   # 去重键
+    theme_key = Column(String(64), nullable=True)      # 关联主题(全网抓取时打标)
+    scope = Column(String(32), nullable=True)          # school name / general
     published_at = Column(DateTime, nullable=True)
     fetched_at = Column(DateTime, default=utcnow)
     meta = Column(JSON, default=dict)
@@ -72,15 +93,18 @@ class RawItem(Base):
 class Topic(Base):
     __tablename__ = "topics"
     id = Column(Integer, primary_key=True)
+    theme_id = Column(Integer, ForeignKey("themes.id"), nullable=True)
     title = Column(String(512))
     kind = Column(String(16))                          # public / school
     school_id = Column(Integer, ForeignKey("schools.id"), nullable=True)
+    period = Column(String(32), nullable=True)         # 日期(YYYY-MM-DD)，主题下按日期去重
     rationale = Column(Text, nullable=True)
     score = Column(Float, default=0.0)
     status = Column(String(16), default="pending")     # pending / selected / rejected
     ref_item_ids = Column(JSON, default=list)
     created_at = Column(DateTime, default=utcnow)
     school = relationship("School")
+    theme = relationship("Theme")
 
 
 class Draft(Base):

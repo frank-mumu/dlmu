@@ -1,15 +1,35 @@
-"""命令行入口：init-db / fetch / create / list-drafts / publish。"""
+"""命令行入口：init-db / seed-themes / fetch / fetch-all / ingest-web / create / select / save-draft / list-drafts / publish。"""
 import argparse
+import json
+import os
 
 from .config import settings
 from .creator import run as create_run
-from .fetchers import get_fetcher
+from .creator import themes as theme_mod
+from .fetchers import fetch_all, get_fetcher
 from .storage import init_db, repo, session_scope
 
 
 def cmd_init_db(_args):
     init_db()
-    print(f"[init-db] 已建表 -> {settings.database_url}")
+    with session_scope() as session:
+        theme_mod.seed_themes(session)
+        n = len(repo.active_themes(session))
+    print(f"[init-db] 已建表 -> {settings.database_url}；已 seed {n} 个主题")
+
+
+def cmd_seed_themes(_args):
+    with session_scope() as session:
+        theme_mod.seed_themes(session)
+        n = len(repo.active_themes(session))
+    print(f"[seed-themes] 已写入/更新 {n} 个主题")
+
+
+def cmd_list_themes(_args):
+    with session_scope() as session:
+        for t in repo.active_themes(session):
+            print(f"{t.id}\t{t.key}\t{t.scope}\t{t.audience}\t{t.name}\t{t.description or ''}")
+        print("（格式：id\\tkey\\tscope\\taudience\\tname\\tdescription）")
 
 
 def cmd_fetch(args):
@@ -24,18 +44,42 @@ def cmd_fetch(args):
     print(f"[fetch:{args.source}] {stats}")
 
 
+def cmd_fetch_all(_args):
+    with session_scope() as session:
+        stats = fetch_all(session, school_names=settings.default_pool or None)
+    print("[fetch-all]")
+    for k, v in stats.items():
+        print(f"  - {k}: {v}")
+
+
+def cmd_ingest_web(args):
+    """把 Agent 全网检索到的内容批量入库（打 theme_key/scope 标签），供创作检索。"""
+    with open(args.file, encoding="utf-8") as f:
+        items = json.load(f)
+    with session_scope() as session:
+        new = 0
+        for it in items:
+            _, created = repo.add_raw_item(
+                session, title=it["title"], kind=it.get("kind", "web"),
+                content=it.get("content"), url=it.get("url"),
+                theme_key=it.get("theme_key"), scope=it.get("scope"),
+                source_id=None)
+            if created:
+                new += 1
+    print(f"[ingest-web] 共 {len(items)} 条，新增 {new} 条")
+
+
 def cmd_create(args):
     print(f"[create] {create_run(limit=args.limit, period=args.period)}")
 
 
 def cmd_select(args):
-    import json
     from .creator import runner
     with session_scope() as session:
-        brief = runner.topics_brief(session, limit=args.limit, period=args.period)
+        brief = runner.topics_brief(session, limit=args.limit,
+                                     period=args.period, theme_id=args.theme)
     text = json.dumps(brief, ensure_ascii=False, indent=2)
     if args.out:
-        import os
         os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
         with open(args.out, "w", encoding="utf-8") as f:
             f.write(text)
@@ -45,7 +89,6 @@ def cmd_select(args):
 
 
 def cmd_save_draft(args):
-    import json
     from .creator import runner
     with open(args.file, encoding="utf-8") as f:
         drafts = json.load(f)
@@ -72,22 +115,31 @@ def main(argv=None):
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     sub.add_parser("init-db").set_defaults(func=cmd_init_db)
+    sub.add_parser("seed-themes").set_defaults(func=cmd_seed_themes)
+    sub.add_parser("list-themes", help="列出内容主题(供抓取/创作任务参考)").set_defaults(func=cmd_list_themes)
 
-    p_fetch = sub.add_parser("fetch", help="运行抓取器")
-    p_fetch.add_argument("--source", required=True, choices=["yz", "rss"])
+    p_fetch = sub.add_parser("fetch", help="运行单个抓取器")
+    p_fetch.add_argument("--source", required=True, choices=["yz", "rss", "web"])
     p_fetch.add_argument("--path", help="yz: CSV 路径")
     p_fetch.add_argument("--url", help="rss: feed 地址")
     p_fetch.add_argument("--pool", nargs="*", help="目标学校池")
     p_fetch.set_defaults(func=cmd_fetch)
 
+    sub.add_parser("fetch-all", help="运行全部自主抓取器(RSS 种子 + 全网搜索)").set_defaults(func=cmd_fetch_all)
+
+    p_ing = sub.add_parser("ingest-web", help="把 Agent 全网检索结果批量入库")
+    p_ing.add_argument("--file", required=True, help="JSON: [{title,content,url,theme_key,scope}]")
+    p_ing.set_defaults(func=cmd_ingest_web)
+
     p_create = sub.add_parser("create", help="运行创作 Agent(外部 LLM)")
     p_create.add_argument("--limit", type=int, default=3)
-    p_create.add_argument("--period", help="期号(默认今天)，用于标题去重")
+    p_create.add_argument("--period", help="期号(默认今天)")
     p_create.set_defaults(func=cmd_create)
 
     p_select = sub.add_parser("select", help="产出候选选题简报(JSON)，供创作 Agent 写文案")
-    p_select.add_argument("--limit", type=int, default=5)
+    p_select.add_argument("--limit", type=int, default=30)
     p_select.add_argument("--period", help="期号(默认今天)")
+    p_select.add_argument("--theme", type=int, help="仅导出某主题(Theme.id)的选题")
     p_select.add_argument("--out", help="简报输出文件(默认打印到 stdout)")
     p_select.set_defaults(func=cmd_select)
 

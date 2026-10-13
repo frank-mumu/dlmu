@@ -1,7 +1,10 @@
-"""选题引擎：从 raw_items + 学校池产出候选选题（公共 + 学校定向）。Phase 1 用规则法。
+"""选题引擎：按「主题 × 日期」产出候选 topic。
 
-后续可在规则基础上叠加 LLM 选题 / 热点权重 / metrics 回流调权。
-topic 标题带“期号(period)”，保证周期性任务每次都能产出新选题。
+- 主题(Theme)一次性定义（见 themes.py），每个主题有 scope(school/general/both)。
+- 对学校定向主题：目标学校池每校生成一条 topic；公共主题：生成一条通用 topic。
+- 每个 topic 带 period(YYYY-MM-DD)，按 (theme_id, period, school_id) 去重，
+  保证周期任务每次只产「今天」的新 topic，不重复。
+- 后续可在规则基础上叠加 LLM 选题 / 热点权重 / metrics 回流调权。
 """
 from datetime import date
 
@@ -11,11 +14,11 @@ _LEVEL_SCORE = {"985": 3.0, "211": 2.0, "双一流": 1.5}
 
 
 def _period_label(period=None):
-    return period or f"{date.today().month}月{date.today().day}日"
+    return period or date.today().isoformat()
 
 
 def _level_score(level):
-    score = 0.5
+    score = 0.3
     if level:
         for key, val in _LEVEL_SCORE.items():
             if key in level:
@@ -23,40 +26,34 @@ def _level_score(level):
     return score
 
 
+def _ensure_topic(session, theme, school=None, period=None):
+    """为某主题(在某学校/公共范围)创建当天 period 的 topic；已存在则跳过。"""
+    scope_label = school.name if school else "考研公共"
+    title = f"{theme.name}｜{scope_label} · {period}"
+    kind = "school" if school else "public"
+    school_id = school.id if school else None
+    rationale = f"主题[{theme.name}/{theme.audience}]；范围={scope_label}"
+    if school:
+        rationale += f"；{school.province or ''}{school.level or ''}"
+    topic, is_new = repo.create_topic(
+        session, title=title, kind=kind, school_id=school_id,
+        rationale=rationale, score=round(_level_score(school.level if school else None), 2),
+        theme_id=theme.id, period=period)
+    return topic, is_new
+
+
 def run(session, period=None):
-    """生成候选选题，返回新建的 Topic 列表。period 为期号(默认今天)。"""
+    """遍历所有 active 主题，按 scope 生成今天 period 的候选 topic。返回新建列表。"""
     label = _period_label(period)
     created = []
-
-    # 学校定向选题：目标学校池中，近期有目录同步的学校
-    for school in repo.pool_schools(session):
-        items = repo.recent_raw_items(session, since_hours=24 * 30,
-                                      kind="catalog", school_id=school.id, limit=1)
-        if not items:
-            continue
-        item = items[0]
-        major_count = (item.meta or {}).get("major_count", 0)
-        score = _level_score(school.level) + min(major_count, 20) * 0.1
-        title = f"{school.name}考研｜{label}硕士招生速览与报考要点"
-        topic, is_new = repo.create_topic(
-            session, title=title, kind="school", school_id=school.id,
-            rationale=f"{school.name}（{school.province or ''}{school.level or ''}）"
-                      f"目录同步 {major_count} 个专业方向",
-            score=round(score, 2), ref_item_ids=[item.id])
-        if is_new:
-            created.append(topic)
-
-    # 公共选题：汇总近期所有目录更新
-    all_items = repo.recent_raw_items(session, since_hours=24 * 30, kind="catalog", limit=500)
-    if all_items:
-        n = len(all_items)
-        title = f"研招网硕士目录更新速览（{label}·{n} 所学校）"
-        topic, is_new = repo.create_topic(
-            session, title=title, kind="public",
-            rationale=f"近期同步 {n} 所学校硕士目录，适合做汇总类干货",
-            score=1.0 + min(n, 50) * 0.05,
-            ref_item_ids=[i.id for i in all_items[:50]])
-        if is_new:
-            created.append(topic)
-
+    for theme in repo.active_themes(session):
+        if theme.scope in ("school", "both"):
+            for school in repo.pool_schools(session):
+                topic, is_new = _ensure_topic(session, theme, school=school, period=label)
+                if is_new:
+                    created.append(topic)
+        if theme.scope in ("general", "both"):
+            topic, is_new = _ensure_topic(session, theme, school=None, period=label)
+            if is_new:
+                created.append(topic)
     return created

@@ -1,7 +1,13 @@
 # dlmu 架构 — 考研信息分享自媒体自动化
 
 目标：周期性**自主选题** → 抓取考研数据 → 生成**图文**（未来视频）→ **人工确认** → 多平台发布 → 数据回流优化。
-选题分两类：**公共选题**（全国考研动态/政策/科普）与**学校定向选题**（针对目标学校池）。
+
+**主题驱动的选题**：内容主题(Theme)**一次性定义**（见 `pipeline/creator/themes.py`，12 个：8 个学校定向 + 4 个公共）。
+选题引擎**按「主题 × 日期」**产出 topic：每个学校定向主题对目标学校池每校生成一条，公共主题生成一条；
+topic 带 `period`(YYYY-MM-DD)，同一主题同一天只产一条——保证周期任务每期都产新内容、不重复。
+
+**抓取分两条路**：①结构化抓取（研招网目录 CSV、可选 RSS）；②**全网抓取**——由定时任务里的
+Agent 用 WebSearch 围绕各主题采集公开信息，`ingest-web` 入库并按 `theme_key/scope` 打标，供创作按主题检索引用。
 
 ## 设计原则：组件解耦，数据库即契约
 
@@ -38,11 +44,12 @@
 | 表 | 归属组件 | 关键字段 | 说明 |
 |----|---------|---------|------|
 | `sources` | 抓取 | name,type,url,enabled,config | 数据源配置 |
+| `themes` | 创作 | key(unique),name,description,audience,scope(search/general/both),search_templates,active | 内容主题（一次性定义） |
 | `schools` | 抓取 | name(unique),code,province,level,in_pool | 学校；`in_pool=true` 即目标学校池 |
 | `majors` | 抓取 | school_id,code,name,degree_type,direction,exam_subjects | 研招网专业目录 |
-| `raw_items` | 抓取 | source_id,school_id,kind,title,content,url_hash(unique),published_at | 抓取的原始内容，按 url_hash 去重 |
-| `topics` | 创作 | title,kind(public/school),school_id,score,status,ref_item_ids | 选题候选 |
-| `drafts` | 创作 | topic_id,platform,form,title,body,tags,assets,status | 草稿；`status`: pending_review/approved/rejected/published |
+| `raw_items` | 抓取 | source_id,school_id,kind,title,content,url_hash(unique),theme_key,scope,published_at | 抓取的原始内容，按 url_hash 去重；`theme_key/scope` 供按主题检索 |
+| `topics` | 创作 | theme_id,title,kind(public/school),school_id,period(YYYY-MM-DD),score,status,ref_item_ids | 选题候选；按(主题,日期,学校)去重 |
+| `drafts` | 创作 | topic_id,platform,form,title,body,tags,assets,pages,status | 草稿；`status`: pending_review/approved/rejected/published |
 | `publish_jobs` | 发布 | draft_id,platform,status,scheduled_at,result | 发布任务（Phase 2） |
 | `metrics` | 回流 | platform,content_ref,views,likes,comments,collects | 表现数据（Phase 4） |
 
@@ -52,7 +59,21 @@
 
 - 每个组件是 `pipeline/<component>/` 下的独立模块，有独立 CLI 入口，**只通过 SQLAlchemy 会话读写 DB**。
 - 组件间不 import 彼此的业务代码（可共用 `pipeline.storage` 的 models/db）。
-- 排期用 cron（执行机无 systemd）：抓取、创作各一个周期任务。
+- 排期：两个周期任务（cron / WorkBuddy automation）——**抓取**（每日：结构化刷新 + Agent 全网采集入库）与**创作**（每 2 天：按主题产 topic + 写文案 + 渲染卡片）。
+
+### CLI
+
+```
+init-db                    建表并 seed 主题
+seed-themes / list-themes  写入 / 查看内容主题
+fetch --source yz|rss|web  运行单个抓取器
+fetch-all                  运行全部自主抓取器(RSS 种子 + 可选搜索 API)
+ingest-web --file F        把 Agent 全网检索结果批量入库(打 theme_key/scope)
+select --limit N --out F   导出候选选题简报(含主题/学校/素材)
+save-draft --file F        按 Agent 文案落草稿 + 渲染 5-8 页卡片
+create                     外部 LLM 模式创作(可选)
+list-drafts / publish      查看草稿 / 发布(Phase 2 预留)
+```
 
 ## 技术选型
 

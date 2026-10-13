@@ -32,6 +32,8 @@ class Settings:
     llm_base_url: str = os.getenv("LLM_BASE_URL", "")
     llm_api_key: str = os.getenv("LLM_API_KEY", "")
     llm_model: str = os.getenv("LLM_MODEL", "")
+    search_api_url: str = os.getenv("SEARCH_API_URL", "")
+    search_api_key: str = os.getenv("SEARCH_API_KEY", "")
     output_dir: str = os.getenv("OUTPUT_DIR", "./outputs")
     card_font: str = os.getenv("CARD_FONT", "")
     default_pool: list = field(default_factory=lambda: _csv("DEFAULT_POOL"))
