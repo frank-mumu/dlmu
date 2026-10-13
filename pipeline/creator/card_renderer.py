@@ -82,6 +82,13 @@ def _font(size):
     return ImageFont.load_default()
 
 
+def _text(dr, xy, s, font, fill, **kw):
+    """统一文字绘制：默认加与文字同色的细描边，使字体稍微加粗（不依赖粗体字库）。"""
+    size = getattr(font, "size", 40) or 40
+    sw = 1 if size < 56 else 2
+    dr.text(xy, s, font=font, fill=fill, stroke_width=sw, stroke_fill=fill, **kw)
+
+
 _ASCII_RUN = re.compile(r"[A-Za-z0-9][A-Za-z0-9+./:#%\-]*")
 
 
@@ -144,7 +151,7 @@ def _draw_centered(draw, cx, cy, text, font, fill):
     bbox = draw.textbbox((0, 0), text, font=font)
     tw = bbox[2] - bbox[0]
     th = bbox[3] - bbox[1]
-    draw.text((cx - tw / 2 - bbox[0], cy - th / 2 - bbox[1]), text, font=font, fill=fill)
+    _text(draw, (cx - tw / 2 - bbox[0], cy - th / 2 - bbox[1]), text, font=font, fill=fill)
 
 
 def _fit_title(d, text, max_w, base_size=40, max_lines=2):
@@ -246,15 +253,15 @@ def _icon(draw, name, cx, cy, r, color):
 def _footer_band(draw, footer, page, total, accent=ACCENT):
     draw.rectangle([0, H - 92, W, H], fill=accent)
     f = _font(36)
-    draw.text((80, H - 64), footer, font=f, fill=WHITE)
+    _text(draw, (80, H - 64), footer, font=f, fill=WHITE)
     pt = f"{page}/{total}"
-    draw.text((W - 80 - draw.textlength(pt, font=f), H - 64), pt, font=f, fill=WHITE)
+    _text(draw, (W - 80 - draw.textlength(pt, font=f), H - 64), pt, font=f, fill=WHITE)
 
 
 def _header_band(draw, heading, accent):
     f_h = _font(54)
     draw.rounded_rectangle([60, 92, W - 60, 224], radius=26, fill=accent)
-    draw.text((100, 92 + (132 - 54) / 2), _fit(draw, heading, f_h, W - 240),
+    _text(draw, (100, 92 + (132 - 54) / 2), _fit(draw, heading, f_h, W - 240),
               font=f_h, fill=WHITE)
 
 
@@ -268,7 +275,7 @@ def _lead(draw, lead, accent, y):
     draw.rounded_rectangle([60, y, 76, y + lead_h], radius=8, fill=accent)
     ty = y + 22
     for ln in ll:
-        draw.text((102, ty), ln, font=f_lead, fill=BODY)
+        _text(draw, (102, ty), ln, font=f_lead, fill=BODY)
         ty += 56
     return y + lead_h + 26
 
@@ -279,10 +286,10 @@ def _callout(draw, callout, accent, top):
     callout_h = len(co_lines) * 54 + 66
     cy0 = top - callout_h
     draw.rounded_rectangle([60, cy0, W - 60, top], radius=22, fill=accent)
-    draw.text((96, cy0 + 16), "重点提示", font=_font(34), fill=WHITE)
+    _text(draw, (96, cy0 + 16), "重点提示", font=_font(34), fill=WHITE)
     ty = cy0 + 60
     for ln in co_lines:
-        draw.text((96, ty), ln, font=f_co, fill=WHITE)
+        _text(draw, (96, ty), ln, font=f_co, fill=WHITE)
         ty += 54
     return callout_h
 
@@ -294,7 +301,7 @@ def _draw_text_block(d, text, font, tx, card_top, card_h):
     lh = 58
     ty = card_top + (card_h - len(lines) * lh) / 2
     for j, ln in enumerate(lines):
-        d.text((tx, ty + j * lh), ln, font=font, fill=INK)
+        _text(d, (tx, ty + j * lh), ln, font=font, fill=INK)
 
 
 def _body_list(d, page, accent, a_light, a_tint, y, bottom):
@@ -363,7 +370,7 @@ def _draw_compare_item(d, text, font, x, cy, w, accent, kind, badge_fill):
     lines = _wrap(d, _strip_marks(text), font, w - 2 * r - 16)[:3]
     ty = cy - len(lines) * 23
     for ln in lines:
-        d.text((x + 2 * r + 16, ty), ln, font=font, fill=INK)
+        _text(d, (x + 2 * r + 16, ty), ln, font=font, fill=INK)
         ty += 46
 
 
@@ -384,11 +391,11 @@ def _body_compare(d, page, accent, a_light, a_tint, y, bottom):
     title_h = max(len(lt_lines), len(rt_lines)) * 52 + 26
     ty = y + 20
     for ln in lt_lines:
-        d.text((84, ty), ln, font=lt_font, fill=accent)
+        _text(d, (84, ty), ln, font=lt_font, fill=accent)
         ty += 52
     ty = y + 20
     for ln in rt_lines:
-        d.text((mid + 44, ty), ln, font=rt_font, fill=accent)
+        _text(d, (mid + 44, ty), ln, font=rt_font, fill=accent)
         ty += 52
     d.line([(mid, y + 14), (mid, bottom - 14)], fill=a_tint, width=4)
     inner_top = y + title_h
@@ -426,11 +433,11 @@ def _body_stat(d, page, accent, a_light, a_tint, y, bottom):
         fl = _wrap(d, label, _font(40), W - 240)[:2]
         ly = y + panel_h - 30 - len(fl) * 46
         for ln in fl:
-            d.text((_cx(d, ln, _font(40)), ly), ln, font=_font(40), fill=WHITE)
+            _text(d, (_cx(d, ln, _font(40)), ly), ln, font=_font(40), fill=WHITE)
             ly += 46
     yy = y + panel_h + 30
     for ln in note_lines:
-        d.text((100, yy), ln, font=f_n, fill=BODY)
+        _text(d, (100, yy), ln, font=f_n, fill=BODY)
         yy += 52
     if chips:
         yy += 24
@@ -444,7 +451,7 @@ def _body_stat(d, page, accent, a_light, a_tint, y, bottom):
                 break
             d.rounded_rectangle([cx, yy, cx + cw, yy + 64], radius=32, fill=a_light)
             _icon(d, icon_names[i % len(icon_names)], cx + 34, yy + 32, 18, accent)
-            d.text((cx + 64, yy + (64 - 34) / 2), c, font=f_chip, fill=accent)
+            _text(d, (cx + 64, yy + (64 - 34) / 2), c, font=f_chip, fill=accent)
             cx += cw + 18
 
 
@@ -467,10 +474,10 @@ def _body_grid(d, page, accent, a_light, a_tint, y, bottom):
         title = it.get("title", "") if isinstance(it, dict) else str(it)
         desc = it.get("desc", "") if isinstance(it, dict) else ""
         _icon(d, icon_names[i % len(icon_names)], x + card_w - 46, cy0 + 46, 22, accent)
-        d.text((x + 34, cy0 + 26), _fit(d, title, f_t, card_w - 110), font=f_t, fill=INK)
+        _text(d, (x + 34, cy0 + 26), _fit(d, title, f_t, card_w - 110), font=f_t, fill=INK)
         ty = cy0 + 26 + 56
         for ln in _wrap(d, desc, f_d, card_w - 70)[:3]:
-            d.text((x + 34, ty), ln, font=f_d, fill=BODY)
+            _text(d, (x + 34, ty), ln, font=f_d, fill=BODY)
             ty += 44
 
 
@@ -486,10 +493,10 @@ def _body_quote(d, page, accent, a_light, a_tint, y, bottom):
     if ty < y + 250:
         ty = y + 250
     for ln in lines:
-        d.text((110, ty), ln, font=f_q, fill=INK)
+        _text(d, (110, ty), ln, font=f_q, fill=INK)
         ty += lh
     if attribution:
-        d.text((110, bottom - 150), attribution, font=_font(36), fill=accent)
+        _text(d, (110, bottom - 150), attribution, font=_font(36), fill=accent)
 
 
 _BODY_DISPATCH = {
@@ -505,7 +512,7 @@ _BODY_DISPATCH = {
 WATERMARK_TEXT = "@妍之有术"
 
 
-def _add_watermark(img, text=WATERMARK_TEXT, angle=-30, alpha=28,
+def _add_watermark(img, text=WATERMARK_TEXT, angle=-30, alpha=40,
                    size=34, gap_x=300, gap_y=210):
     """给整页加半透明斜向平铺水印（背景水印， subtle 不抢内容）。
 
@@ -522,7 +529,7 @@ def _add_watermark(img, text=WATERMARK_TEXT, angle=-30, alpha=28,
     while y < diag:
         x = (gap_x // 2) if (row % 2) else 0
         while x < diag:
-            ld.text((x, y), text, font=f, fill=(115, 115, 115, alpha))
+            ld.text((x, y), text, font=f, fill=(100, 100, 100, alpha))
             x += gap_x
         y += gap_y
         row += 1
@@ -569,12 +576,12 @@ def render_cover(path, title, subtitle="", footer=FOOTER, page=1, total=1,
     d.rounded_rectangle([60, 108, W - 60, 800], radius=32, fill=accent)
     f_kick, f_title = _font(36), _font(80)
     if kicker:
-        d.text((_cx(d, kicker, f_kick), 168), kicker, font=f_kick, fill=WHITE)
+        _text(d, (_cx(d, kicker, f_kick), 168), kicker, font=f_kick, fill=WHITE)
     lines = _wrap(d, title, f_title, W - 220)[:4]
     line_h = 104
     y = 240 + (630 - len(lines) * line_h) / 2
     for ln in lines:
-        d.text((_cx(d, ln, f_title), y), ln, font=f_title, fill=WHITE)
+        _text(d, (_cx(d, ln, f_title), y), ln, font=f_title, fill=WHITE)
         y += line_h
 
     if subtitle:
@@ -582,18 +589,18 @@ def render_cover(path, title, subtitle="", footer=FOOTER, page=1, total=1,
         sw = d.textlength(subtitle, font=f_sub)
         cx = (W - sw) / 2
         d.rounded_rectangle([cx - 44, 838, cx + sw + 44, 932], radius=47, fill=_lighten(accent))
-        d.text((cx, 838 + (94 - 40) / 2), subtitle, font=f_sub, fill=accent)
+        _text(d, (cx, 838 + (94 - 40) / 2), subtitle, font=f_sub, fill=accent)
 
     items = (highlights or tags or [])[:3]
     if items:
         f_lab, f_it = _font(34), _font(38)
-        d.text((80, 972), "本期看点", font=f_lab, fill=accent)
+        _text(d, (80, 972), "本期看点", font=f_lab, fill=accent)
         y = 1030
         for it in items:
             wrapped = _wrap(d, str(it), f_it, W - 210)[:2]
             d.rounded_rectangle([80, y + 12, 98, y + 30], radius=4, fill=accent)
             for k, ln in enumerate(wrapped):
-                d.text((118, y + k * 50), ln, font=f_it, fill=INK)
+                _text(d, (118, y + k * 50), ln, font=f_it, fill=INK)
             y += 50 * len(wrapped) + 20
 
     _footer_band(d, footer, page, total, accent)
@@ -608,7 +615,7 @@ def render_closing(path, closing, footer=FOOTER, page=2, total=2, tags=None, acc
 
     d.rounded_rectangle([60, 176, W - 60, 1006], radius=32, fill=_lighten(accent))
     f_kick = _font(38)
-    d.text((_cx(d, "写在最后", f_kick), 250), "写在最后", font=f_kick, fill=accent)
+    _text(d, (_cx(d, "写在最后", f_kick), 250), "写在最后", font=f_kick, fill=accent)
     sq, gp = 22, 28
     sx = (W - (3 * sq + 2 * gp)) / 2
     for i in range(3):
@@ -619,7 +626,7 @@ def render_closing(path, closing, footer=FOOTER, page=2, total=2, tags=None, acc
     line_h = 78
     y = 420 + (540 - len(lines) * line_h) / 2
     for ln in lines:
-        d.text((_cx(d, ln, f_c), y), ln, font=f_c, fill=INK)
+        _text(d, (_cx(d, ln, f_c), y), ln, font=f_c, fill=INK)
         y += line_h
 
     if tags:
@@ -631,7 +638,7 @@ def render_closing(path, closing, footer=FOOTER, page=2, total=2, tags=None, acc
             if x + cw > W - 70:
                 x, y2 = 70, y2 + 70
             d.rounded_rectangle([x, y2, x + cw, y2 + 58], radius=29, fill=_lighten(accent))
-            d.text((x + 22, y2 + (58 - 32) / 2), t, font=f_chip, fill=accent)
+            _text(d, (x + 22, y2 + (58 - 32) / 2), t, font=f_chip, fill=accent)
             x += cw + 18
 
     _footer_band(d, footer, page, total, accent)
