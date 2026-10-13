@@ -42,11 +42,16 @@ def _ensure_topic(session, theme, school=None, period=None):
     return topic, is_new
 
 
-def run(session, period=None):
-    """遍历所有 active 主题，按 scope 生成今天 period 的候选 topic。返回新建列表。"""
+def run(session, period=None, theme_keys=None):
+    """遍历 active 主题，按 scope 生成今天 period 的候选 topic。返回新建列表。
+
+    theme_keys: 只为这些主题生成 topic（周计划模式：本周只铺本周组的主题）。
+    """
     label = _period_label(period)
     created = []
     for theme in repo.active_themes(session):
+        if theme_keys is not None and theme.key not in theme_keys:
+            continue
         if theme.scope in ("school", "both"):
             for school in repo.pool_schools(session):
                 topic, is_new = _ensure_topic(session, theme, school=school, period=label)

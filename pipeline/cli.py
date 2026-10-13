@@ -75,9 +75,17 @@ def cmd_create(args):
 
 def cmd_select(args):
     from .creator import runner
+    theme_keys = None
+    if args.week:
+        from .creator import planner
+        theme_keys = planner.plan_for().get("theme_keys")
+        plan = planner.plan_for()
+        print(f"[select] 周计划={plan['name']}（{plan['week_start']}~{plan['week_end']}）"
+              f" 主题：{'、'.join(plan['themes_cn'])}")
     with session_scope() as session:
         brief = runner.topics_brief(session, limit=args.limit,
-                                     period=args.period, theme_id=args.theme)
+                                     period=args.period, theme_id=args.theme,
+                                     theme_keys=theme_keys)
     text = json.dumps(brief, ensure_ascii=False, indent=2)
     if args.out:
         os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
@@ -230,6 +238,18 @@ def cmd_clone_voice(args):
               "（重跑创作/export 即用克隆音色）")
 
 
+def cmd_plan(args):
+    """查看内容周计划（本周起 n 周），可写入 markdown 供查阅。"""
+    from .creator import planner
+    text = planner.render_markdown(n=args.weeks)
+    if args.out:
+        os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
+        with open(args.out, "w", encoding="utf-8") as f:
+            f.write(text)
+        print(f"[plan] 周计划已写入 {args.out}")
+    print(text)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="dlmu", description="考研自媒体自动化流水线")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -260,8 +280,15 @@ def main(argv=None):
     p_select.add_argument("--limit", type=int, default=30)
     p_select.add_argument("--period", help="期号(默认今天)")
     p_select.add_argument("--theme", type=int, help="仅导出某主题(Theme.id)的选题")
+    p_select.add_argument("--week", action="store_true",
+                          help="周计划模式：仅导出本周组主题的选题")
     p_select.add_argument("--out", help="简报输出文件(默认打印到 stdout)")
     p_select.set_defaults(func=cmd_select)
+
+    p_plan = sub.add_parser("plan", help="查看内容周计划(本周起,4组主题按周轮换)")
+    p_plan.add_argument("--weeks", type=int, default=4, help="展示未来几周(默认4)")
+    p_plan.add_argument("--out", help="写入 markdown 文件(如 outputs/weekly_plan.md)")
+    p_plan.set_defaults(func=cmd_plan)
 
     p_save = sub.add_parser("save-draft", help="按 Agent 写好的文案 JSON 落草稿+渲染卡片")
     p_save.add_argument("--file", required=True, help="JSON: [{topic_id,title,body,tags[]}]")

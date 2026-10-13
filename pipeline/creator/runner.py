@@ -232,9 +232,10 @@ def run(limit=3, period=None):
         return {"new_topics": len(new_topics), "draft_ids": draft_ids}
 
 
-def topics_brief(session, limit=30, period=None, theme_id=None):
+def topics_brief(session, limit=30, period=None, theme_id=None, theme_keys=None):
     """产出候选选题的结构化简报(JSON 友好)，供创作 Agent(或人)据此写文案。
 
+    theme_keys: 周计划模式——只为本周组的主题选题/出简报。
     每个选题附带：
     - 所属主题、受众、按主题标签检索到的近期原始素材(全网抓取结果)；
     - school_anchor：永远锚定大连海事大学的可核实具体事实（专业代码/考试科目），
@@ -243,8 +244,10 @@ def topics_brief(session, limit=30, period=None, theme_id=None):
     - verified_facts / unverified_note：标明哪些可写、哪些严禁编造。
     """
     from . import prompts, style_guide
-    selector.run(session, period=period)
+    selector.run(session, period=period, theme_keys=theme_keys)
     topics = repo.pending_topics(session, limit=limit, theme_id=theme_id)
+    if theme_keys is not None:
+        topics = [t for t in topics if t.theme and t.theme.key in theme_keys]
     anchor = prompts.anchor_school(session)
     brief = []
     for t in topics:
