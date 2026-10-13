@@ -12,7 +12,7 @@
   C. 学校信息锚定度：每页是否至少引用 1 处大连海事大学可核实事实，分数低说明内容空泛。
   D.（可选）LLM 通读：把草稿+数据源交给大模型，逐页给出「有依据/部分/无依据」与问题清单。
 
-复核结果写入创作目录（outputs/cards/<主题名>/）：<日期>_<主题名>_复核.json（机读）+ _复核.md（人读）。
+复核结果写入创作目录（outputs/cards/<编号>_<主题名>/<日期>_<话题>/）：复核.md（人读）。
 """
 import datetime
 import json
@@ -340,14 +340,11 @@ def _render_md(report, topic, content):
     return "\n".join(lines)
 
 
-def verify_and_write(session, topic, content, out_dir, stamp="", name_token=""):
-    """构建基准→复核→写文件（<日期>_<主题名>_复核.json + _复核.md）到创作目录，返回报告。"""
+def verify_and_write(session, topic, content, out_dir):
+    """构建基准→复核→写人读报告（复核.md）到创作目录，返回报告。"""
     fb = build_fact_base(session, topic)
     report = verify_draft(content, fb)
     os.makedirs(out_dir, exist_ok=True)
-    pfx = f"{stamp}_{name_token}_" if (stamp or name_token) else ""
-    with open(os.path.join(out_dir, f"{pfx}复核.json"), "w", encoding="utf-8") as f:
-        json.dump(report, f, ensure_ascii=False, indent=2)
-    with open(os.path.join(out_dir, f"{pfx}复核.md"), "w", encoding="utf-8") as f:
+    with open(os.path.join(out_dir, "复核.md"), "w", encoding="utf-8") as f:
         f.write(_render_md(report, topic, content))
     return report

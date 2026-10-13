@@ -134,14 +134,14 @@ def cmd_verify(args):
             return
         content = {"title": draft.title, "subtitle": "", "pages": draft.pages or [],
                    "closing": "", "tags": draft.tags or []}
-        out_dir = runner.topic_card_dir(topic)
-        report = verifier.verify_and_write(
-            session, topic, content, out_dir,
-            stamp=runner.topic_stamp(topic), name_token=runner.topic_name_token(topic))
+        # 复核报告写回该期的卡片目录（与图片同目录）；无图片时退到主题根目录
+        out_dir = (os.path.dirname(draft.assets[0]) if draft.assets
+                   else runner.topic_run_dir(session, topic, draft.title))
+        report = verifier.verify_and_write(session, topic, content, out_dir)
         print(f"[verify] topic{topic.id}（{topic.theme.name if topic.theme else topic.title}）"
               f" 结论={report['verdict']} "
               f"问题={report['counts']['total']}（高{report['counts']['high']}/中{report['counts']['mid']}）")
-        print(f"          报告 -> {out_dir}/{runner.topic_stamp(topic)}_{runner.topic_name_token(topic)}_复核.md")
+        print(f"          报告 -> {os.path.join(out_dir, '复核.md')}")
 
 
 def main(argv=None):

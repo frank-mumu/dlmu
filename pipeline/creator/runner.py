@@ -2,7 +2,7 @@
 import os
 
 from ..config import settings
-from ..storage import Major, Topic, repo, session_scope
+from ..storage import Major, Theme, Topic, repo, session_scope
 from . import copywriter, selector
 from .card_renderer import render_draft, accent_for
 import re
@@ -13,10 +13,35 @@ def _fsafe(s):
     return re.sub(r'[\\/:*?"<>|\r\n\t]', "", str(s)).strip().strip(".") or "topic"
 
 
-def topic_card_dir(topic):
-    """某 topic 的卡片根目录：按『主题需要+名字』命名（用主题中文名），跨期累积。"""
-    name = (topic.theme.name if topic.theme else (topic.title or "topic"))
-    return os.path.join(settings.output_dir, "cards", _fsafe(name))
+def _label(s, n=24):
+    """话题标签：只留中文/字母/数字（去掉 emoji/标点/空格），截断到 n 字。"""
+    t = re.sub(r"[^\u4e00-\u9fff0-9A-Za-z]", "", str(s))
+    return t[:n] or "topic"
+
+
+def theme_number(session, theme):
+    """主题编号 01..N：按 active 主题 id 顺序（= 定义顺序）稳定编号。"""
+    if theme is None:
+        return "00"
+    for i, th in enumerate(repo.active_themes(session), start=1):
+        if th.id == theme.id:
+            return f"{i:02d}"
+    return "00"
+
+
+def topic_card_dir(session, topic):
+    """主题根目录：编号_主题名（如 01_院校专业解读），跨期累积。"""
+    theme = topic.theme
+    name = (theme.name if theme else (topic.title or "topic"))
+    no = theme_number(session, theme)
+    return os.path.join(settings.output_dir, "cards", f"{no}_{_fsafe(name)}")
+
+
+def topic_run_dir(session, topic, title=""):
+    """某一期的卡片目录：主题根目录 / YYYYMMDD_本期话题。"""
+    stamp = topic_stamp(topic)
+    label = _label(title or (topic.title or "topic"))
+    return os.path.join(topic_card_dir(session, topic), f"{stamp}_{label}")
 
 
 def topic_stamp(topic):
@@ -30,11 +55,6 @@ def topic_stamp(topic):
         return datetime.utcnow().strftime("%Y%m%d")
     except Exception:
         return "00000000"
-
-
-def topic_name_token(topic):
-    """『主题概述』令牌：用主题中文名。"""
-    return _fsafe(topic.theme.name if topic.theme else (topic.title or "topic"))
 
 
 def _subtitle(topic, school):
@@ -155,15 +175,12 @@ def finalize_draft(session, topic, content):
     body = content.get("body") or pages_to_body(title, pages, closing)
     footer = f"{school.name} · 考研干货" if school else "考研信息 · 干货分享"
     kicker = f"{school.name} · 2026 硕士招生速览" if school else "2026 考研 · 硕士招生速览"
-    out_dir = topic_card_dir(topic)
-    stamp = topic_stamp(topic)
-    name_token = topic_name_token(topic)
+    out_dir = topic_run_dir(session, topic, title)
     # 同一篇统一主题色（按 topic 确定性分配），保证单篇视觉一致
     accent = accent_for(topic.id)
     assets = render_draft(out_dir, title, subtitle, pages, closing=closing, footer=footer,
                           tags=content.get("tags"), kicker=kicker,
-                          highlights=content.get("highlights"), accent=accent,
-                          stamp=stamp, name_token=name_token)
+                          highlights=content.get("highlights"), accent=accent)
     draft = repo.create_draft(
         session, topic_id=topic.id, title=title, body=body,
         tags=content.get("tags", []), assets=assets, platform="xiaohongshu",
@@ -176,7 +193,7 @@ def finalize_draft(session, topic, content):
         session, topic,
         {"title": title, "subtitle": subtitle, "pages": pages,
          "closing": closing, "tags": content.get("tags")},
-        out_dir, stamp=stamp, name_token=name_token)
+        out_dir)
     draft.reviewed_at = datetime_now()
     return draft
 

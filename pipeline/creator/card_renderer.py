@@ -584,34 +584,32 @@ def render_closing(path, closing, footer=FOOTER, page=2, total=2, tags=None, acc
 
 
 def render_draft(out_dir, title, subtitle, pages, closing="", footer=FOOTER,
-                 tags=None, kicker="2026 考研 · 硕士招生速览", highlights=None, accent=ACCENT,
-                 stamp="", name_token=""):
-    """渲染一套分页卡片：封面 + 每页内容(按各自 layout 绘制) + 尾页 CTA。
+                 tags=None, kicker="2026 考研 · 硕士招生速览", highlights=None, accent=ACCENT):
+    """渲染一套分页卡片：封面(01) + 每页内容(02..按各自 layout) + 尾页(最后一张)。
 
     同一篇统一用传入的 accent（由调用方按 topic 决定），保证视觉一致。
+    图片统一编号：封面=01、内容页从 02 起、尾页=最后一张；按文件名排序即可正确翻页
+    （封面在最前、封底在末尾）。目录（年月日_话题）由调用方决定。
     pages: [{"heading"?, "lead"?, "layout"?, ...各布局字段}, ...]
-
-    文件名按「日期_主题概述」前缀（如 20261013_院校专业解读_封面.png），便于按时间归档与辨认。
     返回图片路径列表(顺序即翻页顺序)。
     """
     os.makedirs(out_dir, exist_ok=True)
     pages = pages or []
     total = 1 + len(pages) + (1 if closing else 0)
     paths = []
-    pfx = f"{stamp}_{name_token}_" if (stamp or name_token) else ""
 
-    cover = os.path.join(out_dir, f"{pfx}封面.png")
+    cover = os.path.join(out_dir, "01_封面.png")
     render_cover(cover, title, subtitle, footer=footer, page=1, total=total,
                  tags=tags, kicker=kicker, highlights=highlights, accent=accent)
     paths.append(cover)
 
     for ci, pg in enumerate(pages, start=1):
-        p = os.path.join(out_dir, f"{pfx}第{ci}页.png")
+        p = os.path.join(out_dir, f"{ci + 1:02d}_第{ci}页.png")
         render_content(p, pg, page_no=ci + 1, total=total, footer=footer, accent=accent)
         paths.append(p)
 
     if closing:
-        p = os.path.join(out_dir, f"{pfx}尾页.png")
+        p = os.path.join(out_dir, f"{total:02d}_尾页.png")
         render_closing(p, closing, footer=footer, page=total, total=total, tags=tags, accent=accent)
         paths.append(p)
 
