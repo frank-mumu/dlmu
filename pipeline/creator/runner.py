@@ -135,7 +135,20 @@ def finalize_draft(session, topic, content):
         form="image_text", generator=content.get("generator", "workbuddy"),
         pages=pages)
     repo.select_topic(session, topic.id)
+    # 创作后自动复核：依据原始数据源（专业目录 + 全网素材）校验内容，报告写入同一目录
+    from . import verifier
+    review = verifier.verify_and_write(
+        session, topic,
+        {"title": title, "subtitle": subtitle, "pages": pages,
+         "closing": closing, "tags": content.get("tags")},
+        out_dir)
+    draft.reviewed_at = datetime_now()
     return draft
+
+
+def datetime_now():
+    from datetime import datetime
+    return datetime.utcnow()
 
 
 def run(limit=3, period=None):
@@ -159,20 +172,39 @@ def run(limit=3, period=None):
 def topics_brief(session, limit=30, period=None, theme_id=None):
     """产出候选选题的结构化简报(JSON 友好)，供创作 Agent(或人)据此写文案。
 
-    每个选题附带：所属主题、受众、按主题标签检索到的近期原始素材(全网抓取结果)。
+    每个选题附带：
+    - 所属主题、受众、按主题标签检索到的近期原始素材(全网抓取结果)；
+    - school_anchor：永远锚定大连海事大学的可核实具体事实（专业代码/考试科目），
+      公共主题也带，便于把宏观政策落到本校考生身上；
+    - writing_guide：围绕学校具体信息、不得编造的取材规范；
+    - verified_facts / unverified_note：标明哪些可写、哪些严禁编造。
     """
+    from . import prompts
     selector.run(session, period=period)
     topics = repo.pending_topics(session, limit=limit, theme_id=theme_id)
+    anchor = prompts.anchor_school(session)
     brief = []
     for t in topics:
         school = t.school
         theme = t.theme
-        majors = (session.query(Major).filter_by(school_id=school.id).limit(20).all()
-                  if school else [])
-        # 按主题标签检索全网抓取到的原始素材
-        raw = repo.recent_raw_items(
-            session, theme_key=theme.key if theme else None,
-            scope=school.name if school else "general", limit=5)
+        # 锚定学校的具体专业事实（学校定向用自身，公共主题用大连海事大学做例子锚点）
+        anchor_school = school or anchor
+        majors = (session.query(Major).filter_by(school_id=anchor_school.id).limit(20).all()
+                  if anchor_school else [])
+        # 原始数据源：① 本主题标签下的全网素材；② 锚定学校的全网素材
+        raw = []
+        if theme:
+            raw += repo.all_raw_items(session, theme_key=theme.key, scope="general", limit=5)
+        if anchor_school:
+            raw += repo.all_raw_items(session, scope=anchor_school.name, limit=5)
+        # 去重
+        seen, raw_dedup = set(), []
+        for it in raw:
+            k = it.title
+            if k in seen:
+                continue
+            seen.add(k)
+            raw_dedup.append(it)
         brief.append({
             "topic_id": t.id,
             "kind": t.kind,
@@ -184,12 +216,19 @@ def topics_brief(session, limit=30, period=None, theme_id=None):
             "rationale": t.rationale,
             "school": ({"name": school.name, "province": school.province,
                         "level": school.level} if school else None),
+            "school_anchor": ({"name": anchor_school.name,
+                               "province": anchor_school.province,
+                               "level": anchor_school.level}
+                              if anchor_school else None),
             "majors": [{"code": m.code, "name": m.name, "degree_type": m.degree_type,
                         "direction": m.direction, "exam_subjects": m.exam_subjects}
                        for m in majors],
             "ref_items": [{"title": it.title, "content": (it.content or "")[:1500],
                            "url": it.url, "scope": it.scope}
-                          for it in raw],
+                          for it in raw_dedup],
+            "writing_guide": prompts.writing_guide(theme.name if theme else "", t.kind),
+            "verified_facts": prompts.verified_facts_block(session, anchor_school),
+            "unverified_note": prompts.unverified_note(),
         })
     return brief
 

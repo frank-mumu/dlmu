@@ -7,7 +7,7 @@ from .config import settings
 from .creator import run as create_run
 from .creator import themes as theme_mod
 from .fetchers import fetch_all, get_fetcher
-from .storage import init_db, repo, session_scope
+from .storage import init_db, repo, session_scope, Topic
 
 
 def cmd_init_db(_args):
@@ -110,6 +110,28 @@ def cmd_publish(_args):
           "approved 草稿可用 `list-drafts --status approved` 查看。")
 
 
+def cmd_verify(args):
+    from .creator import verifier
+    with session_scope() as session:
+        topic = session.get(Topic, args.topic)
+        if topic is None:
+            print(f"[verify] topic {args.topic} 不存在")
+            return
+        draft = repo.latest_draft(session, args.topic)
+        if draft is None:
+            print(f"[verify] topic {args.topic} 尚无草稿，无法复核")
+            return
+        content = {"title": draft.title, "subtitle": "", "pages": draft.pages or [],
+                   "closing": "", "tags": draft.tags or []}
+        out_dir = os.path.join(settings.output_dir, "cards", f"topic{args.topic}")
+        if draft.assets:
+            out_dir = os.path.dirname(draft.assets[0])
+        report = verifier.verify_and_write(session, topic, content, out_dir)
+        print(f"[verify] topic{args.topic} 结论={report['verdict']} "
+              f"问题={report['counts']['total']}（高{report['counts']['high']}/中{report['counts']['mid']}）")
+        print(f"          报告 -> {out_dir}/review.json + review.md")
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="dlmu", description="考研自媒体自动化流水线")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -151,6 +173,10 @@ def main(argv=None):
     p_list.add_argument("--status")
     p_list.add_argument("--limit", type=int, default=20)
     p_list.set_defaults(func=cmd_list_drafts)
+
+    p_verify = sub.add_parser("verify", help="对已有草稿做事实性复核，报告写入 cards/topicN/")
+    p_verify.add_argument("--topic", type=int, required=True, help="Topic id")
+    p_verify.set_defaults(func=cmd_verify)
 
     sub.add_parser("publish").set_defaults(func=cmd_publish)
 

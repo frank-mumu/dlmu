@@ -132,6 +132,21 @@ def recent_raw_items(session, since_hours=24*30, kind=None, school_id=None,
     return q.order_by(RawItem.fetched_at.desc()).limit(limit).all()
 
 
+def all_raw_items(session, kind=None, school_id=None, theme_key=None,
+                  scope=None, limit=200):
+    """不受时间窗限制的原始数据源查询（复核时按主题/学校取全部已采集素材）。"""
+    q = session.query(RawItem)
+    if kind:
+        q = q.filter(RawItem.kind == kind)
+    if school_id is not None:
+        q = q.filter(RawItem.school_id == school_id)
+    if theme_key:
+        q = q.filter(RawItem.theme_key == theme_key)
+    if scope:
+        q = q.filter(RawItem.scope == scope)
+    return q.order_by(RawItem.fetched_at.desc()).limit(limit).all()
+
+
 # ---------- 选题 ----------
 def create_topic(session, title, kind, school_id=None, rationale=None,
                  score=0.0, ref_item_ids=None, theme_id=None, period=None):
@@ -187,3 +202,8 @@ def list_drafts(session, status=None, limit=50):
     if status:
         q = q.filter(Draft.status == status)
     return q.order_by(Draft.created_at.desc()).limit(limit).all()
+
+
+def latest_draft(session, topic_id):
+    return (session.query(Draft).filter_by(topic_id=topic_id)
+            .order_by(Draft.created_at.desc()).first())
