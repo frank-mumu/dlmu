@@ -181,6 +181,18 @@ def cmd_verify(args):
         print(f"          报告 -> {os.path.join(out_dir, '复核.md')}")
 
 
+def cmd_clone_voice(args):
+    """用录音做 ElevenLabs 即时克隆音色，返回 voice_id；--save 写入 .env 并启用。"""
+    from .creator import narrator
+    vid = narrator.clone_voice(args.name, args.file)
+    print(f"[clone-voice] name={args.name} voice_id={vid}")
+    if args.save:
+        with open(".env", "a", encoding="utf-8") as f:
+            f.write(f"\nELEVENLABS_VOICE_ID={vid}\nTTS_PROVIDER=elevenlabs\n")
+        print("[clone-voice] 已写入 .env：ELEVENLABS_VOICE_ID + TTS_PROVIDER=elevenlabs"
+              "（重跑创作/export 即用克隆音色）")
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="dlmu", description="考研自媒体自动化流水线")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -234,6 +246,13 @@ def main(argv=None):
     p_export.add_argument("--status", help="按草稿状态过滤(如 approved)")
     p_export.add_argument("--limit", type=int, default=50)
     p_export.set_defaults(func=cmd_export)
+
+    p_clone = sub.add_parser("clone-voice", help="用录音做 ElevenLabs 即时克隆音色(需 ELEVENLABS_API_KEY)")
+    p_clone.add_argument("--name", required=True, help="音色名，如 学姐")
+    p_clone.add_argument("--file", action="append", required=True,
+                         help="干净录音文件(mp3/m4a/wav)，可多次传入；建议 1-5 分钟女声无背景音")
+    p_clone.add_argument("--save", action="store_true", help="把 voice_id 写入 .env 并启用 elevenlabs")
+    p_clone.set_defaults(func=cmd_clone_voice)
 
     args = parser.parse_args(argv)
     args.func(args)

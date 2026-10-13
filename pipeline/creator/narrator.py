@@ -10,8 +10,12 @@ import re
 import shutil
 import subprocess
 
+from ..config import settings  # noqa: F401  确保 .env 已加载进 os.environ
+
 DEFAULT_VOICE = os.getenv("TTS_VOICE", "Tingting")
 DEFAULT_RATE = os.getenv("TTS_RATE", "205")
+# TTS_PROVIDER: say(系统,默认) | elevenlabs(自然/可克隆,需 ELEVENLABS_API_KEY + ELEVENLABS_VOICE_ID)
+TTS_PROVIDER = os.getenv("TTS_PROVIDER", "say").lower()
 
 
 def _clean_for_tts(s):
@@ -84,8 +88,18 @@ def _convert_to_mp3(aiff_path, mp3_path):
 
 
 def synthesize(text, out_path, voice=DEFAULT_VOICE, rate=DEFAULT_RATE):
-    """把口播稿合成为音频文件，返回生成的音频路径（失败返回 None）。"""
-    if not text or not shutil.which("say"):
+    """把口播稿合成为音频文件，返回生成的音频路径（失败返回 None）。
+
+    provider=elevenlabs 时优先用 ElevenLabs（自然/可克隆音色）；缺 key/voice 则回退系统 say。
+    """
+    if not text:
+        return None
+    if os.getenv("TTS_PROVIDER", "say").lower() == "elevenlabs":
+        r = synthesize_elevenlabs(text, out_path)
+        if r:
+            return r
+        print("[narrator] ElevenLabs 不可用(缺 key/voice_id?)，回退系统 say")
+    if not shutil.which("say"):
         return None
     aiff = out_path + ".aiff"
     try:
@@ -95,6 +109,55 @@ def synthesize(text, out_path, voice=DEFAULT_VOICE, rate=DEFAULT_RATE):
     finally:
         if os.path.exists(aiff):
             os.remove(aiff)
+
+
+def synthesize_elevenlabs(text, out_path, voice_id=None,
+                          model="eleven_multilingual_v2"):
+    """用 ElevenLabs 合成（支持克隆音色、有感情、中文自然）。返回音频路径或 None。"""
+    import requests
+    key = os.getenv("ELEVENLABS_API_KEY", "")
+    voice_id = voice_id or os.getenv("ELEVENLABS_VOICE_ID", "")
+    if not (key and voice_id):
+        return None
+    url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
+    headers = {"xi-api-key": key, "Content-Type": "application/json",
+               "Accept": "audio/mpeg"}
+    payload = {
+        "text": text,
+        "model_id": model,
+        "voice_settings": {"stability": 0.45, "similarity_boost": 0.8,
+                           "style": 0.35, "use_speaker_boost": True},
+    }
+    resp = requests.post(url, headers=headers, json=payload, timeout=180)
+    resp.raise_for_status()
+    with open(out_path, "wb") as f:
+        f.write(resp.content)
+    return out_path
+
+
+def clone_voice(name, audio_paths, description=""):
+    """用录音做 ElevenLabs 即时克隆(IVC)，返回 voice_id。
+
+    audio_paths: 1..N 段干净录音(建议 1-5 分钟、女声、安静无背景音、无混响)。
+    需要 ELEVENLABS_API_KEY；Instant Voice Clone 需付费套餐。
+    """
+    import requests
+    key = os.getenv("ELEVENLABS_API_KEY", "")
+    if not key:
+        raise RuntimeError("缺少 ELEVENLABS_API_KEY（写入 .env）")
+    handles = [open(p, "rb") for p in audio_paths]
+    try:
+        files = [("files", (os.path.basename(p), h, "audio/mpeg"))
+                 for p, h in zip(audio_paths, handles)]
+        data = {"name": name, "description": description or f"{name}（克隆音色）"}
+        resp = requests.post("https://api.elevenlabs.io/v1/voices/add",
+                             headers={"xi-api-key": key}, files=files, data=data,
+                             timeout=300)
+        resp.raise_for_status()
+        return resp.json().get("voice_id")
+    finally:
+        for h in handles:
+            h.close()
 
 
 def narrate(content, out_dir, filename="语音解说.mp3"):
