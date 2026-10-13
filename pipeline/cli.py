@@ -111,25 +111,37 @@ def cmd_publish(_args):
 
 
 def cmd_verify(args):
-    from .creator import verifier
+    from .creator import runner, verifier
     with session_scope() as session:
-        topic = session.get(Topic, args.topic)
+        # 支持按 id 或「主题名 / 主题 key」定位 topic
+        topic = None
+        try:
+            topic = session.get(Topic, int(args.topic))
+        except (ValueError, TypeError):
+            for t in session.query(Topic).all():
+                nm = (t.theme.name if t.theme else "") or t.title or ""
+                key = (t.theme.key if t.theme else "") or ""
+                if args.topic in (nm, key) or args.topic in nm:
+                    topic = t
+                    break
         if topic is None:
-            print(f"[verify] topic {args.topic} 不存在")
+            print(f"[verify] 找不到 topic：{args.topic}（可用 id 或 主题名/key，"
+                  f"如 `院校专业解读`）")
             return
-        draft = repo.latest_draft(session, args.topic)
+        draft = repo.latest_draft(session, topic.id)
         if draft is None:
-            print(f"[verify] topic {args.topic} 尚无草稿，无法复核")
+            print(f"[verify] topic {topic.id}（{topic.title}）尚无草稿，无法复核")
             return
         content = {"title": draft.title, "subtitle": "", "pages": draft.pages or [],
                    "closing": "", "tags": draft.tags or []}
-        out_dir = os.path.join(settings.output_dir, "cards", f"topic{args.topic}")
-        if draft.assets:
-            out_dir = os.path.dirname(draft.assets[0])
-        report = verifier.verify_and_write(session, topic, content, out_dir)
-        print(f"[verify] topic{args.topic} 结论={report['verdict']} "
+        out_dir = runner.topic_card_dir(topic)
+        report = verifier.verify_and_write(
+            session, topic, content, out_dir,
+            stamp=runner.topic_stamp(topic), name_token=runner.topic_name_token(topic))
+        print(f"[verify] topic{topic.id}（{topic.theme.name if topic.theme else topic.title}）"
+              f" 结论={report['verdict']} "
               f"问题={report['counts']['total']}（高{report['counts']['high']}/中{report['counts']['mid']}）")
-        print(f"          报告 -> {out_dir}/review.json + review.md")
+        print(f"          报告 -> {out_dir}/{runner.topic_stamp(topic)}_{runner.topic_name_token(topic)}_复核.md")
 
 
 def main(argv=None):
@@ -174,8 +186,8 @@ def main(argv=None):
     p_list.add_argument("--limit", type=int, default=20)
     p_list.set_defaults(func=cmd_list_drafts)
 
-    p_verify = sub.add_parser("verify", help="对已有草稿做事实性复核，报告写入 cards/topicN/")
-    p_verify.add_argument("--topic", type=int, required=True, help="Topic id")
+    p_verify = sub.add_parser("verify", help="对已有草稿做事实性复核，报告写入 cards/<主题名>/")
+    p_verify.add_argument("--topic", required=True, help="Topic id 或 主题名/key（如 院校专业解读）")
     p_verify.set_defaults(func=cmd_verify)
 
     sub.add_parser("publish").set_defaults(func=cmd_publish)

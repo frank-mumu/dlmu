@@ -5,6 +5,36 @@ from ..config import settings
 from ..storage import Major, Topic, repo, session_scope
 from . import copywriter, selector
 from .card_renderer import render_draft, accent_for
+import re
+
+
+def _fsafe(s):
+    """文件名安全化：保留中文/字母/数字，剔除文件系统危险字符。"""
+    return re.sub(r'[\\/:*?"<>|\r\n\t]', "", str(s)).strip().strip(".") or "topic"
+
+
+def topic_card_dir(topic):
+    """某 topic 的卡片根目录：按『主题需要+名字』命名（用主题中文名），跨期累积。"""
+    name = (topic.theme.name if topic.theme else (topic.title or "topic"))
+    return os.path.join(settings.output_dir, "cards", _fsafe(name))
+
+
+def topic_stamp(topic):
+    """日期戳 YYYYMMDD：优先用 topic.period，否则今天。"""
+    period = getattr(topic, "period", None) or ""
+    m = re.search(r"(\d{4})[-/]?(\d{1,2})[-/]?(\d{1,2})", str(period))
+    if m:
+        return f"{m.group(1)}{int(m.group(2)):02d}{int(m.group(3)):02d}"
+    try:
+        from datetime import datetime
+        return datetime.utcnow().strftime("%Y%m%d")
+    except Exception:
+        return "00000000"
+
+
+def topic_name_token(topic):
+    """『主题概述』令牌：用主题中文名。"""
+    return _fsafe(topic.theme.name if topic.theme else (topic.title or "topic"))
 
 
 def _subtitle(topic, school):
@@ -125,12 +155,15 @@ def finalize_draft(session, topic, content):
     body = content.get("body") or pages_to_body(title, pages, closing)
     footer = f"{school.name} · 考研干货" if school else "考研信息 · 干货分享"
     kicker = f"{school.name} · 2026 硕士招生速览" if school else "2026 考研 · 硕士招生速览"
-    out_dir = os.path.join(settings.output_dir, "cards", f"topic{topic.id}")
+    out_dir = topic_card_dir(topic)
+    stamp = topic_stamp(topic)
+    name_token = topic_name_token(topic)
     # 同一篇统一主题色（按 topic 确定性分配），保证单篇视觉一致
     accent = accent_for(topic.id)
     assets = render_draft(out_dir, title, subtitle, pages, closing=closing, footer=footer,
                           tags=content.get("tags"), kicker=kicker,
-                          highlights=content.get("highlights"), accent=accent)
+                          highlights=content.get("highlights"), accent=accent,
+                          stamp=stamp, name_token=name_token)
     draft = repo.create_draft(
         session, topic_id=topic.id, title=title, body=body,
         tags=content.get("tags", []), assets=assets, platform="xiaohongshu",
@@ -143,7 +176,7 @@ def finalize_draft(session, topic, content):
         session, topic,
         {"title": title, "subtitle": subtitle, "pages": pages,
          "closing": closing, "tags": content.get("tags")},
-        out_dir)
+        out_dir, stamp=stamp, name_token=name_token)
     draft.reviewed_at = datetime_now()
     return draft
 
