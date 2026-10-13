@@ -147,6 +147,20 @@ def _draw_centered(draw, cx, cy, text, font, fill):
     draw.text((cx - tw / 2 - bbox[0], cy - th / 2 - bbox[1]), text, font=font, fill=fill)
 
 
+def _fit_title(d, text, max_w, base_size=40, max_lines=2):
+    """栏目标题排版：优先 base_size；超过 max_lines 行则逐级缩字号，仍超则末行省略。
+    返回 (行列表, 字体)，保证不超出栏宽 max_w。"""
+    for size in (base_size, 36, 34, 32, 30):
+        f = _font(size)
+        lines = _wrap(d, text, f, max_w)
+        if len(lines) <= max_lines:
+            return lines, f
+    f = _font(30)
+    lines = _wrap(d, text, f, max_w)[:max_lines]
+    lines[-1] = _fit(d, lines[-1] + "…", f, max_w)
+    return lines, f
+
+
 # Pillow 无彩色 emoji 字体，正文里的 emoji 不显示；这些标记交给「手绘图形」表达，
 # 显示前把行首的标记符号去掉，避免留空/豆腐块。
 _MARK_CHARS = set("🚫❌✗✖×✅✔💡📌⚠👉🔥✨🎯💪🚢⚙📱⚖💻🔍🚦🧭👍❗❓·•-—:： \uFE0F\u200d")
@@ -363,11 +377,21 @@ def _body_compare(d, page, accent, a_light, a_tint, y, bottom):
     d.rounded_rectangle([60, y, mid - 20, bottom], radius=22, fill=a_light)
     d.rounded_rectangle([mid + 20, y, W - 60, bottom], radius=22, fill=WHITE,
                         outline=a_tint, width=3)
-    f_t = _font(40)
-    d.text((80, y + 18), left_title, font=f_t, fill=accent)
-    d.text((mid + 40, y + 18), right_title, font=f_t, fill=accent)
+    # 栏目标题：按栏宽自动换行/缩字号，避免溢出到邻栏或被画布裁切
+    tmax_w = int(col_w - 48)
+    lt_lines, lt_font = _fit_title(d, left_title, tmax_w)
+    rt_lines, rt_font = _fit_title(d, right_title, tmax_w)
+    title_h = max(len(lt_lines), len(rt_lines)) * 52 + 26
+    ty = y + 20
+    for ln in lt_lines:
+        d.text((84, ty), ln, font=lt_font, fill=accent)
+        ty += 52
+    ty = y + 20
+    for ln in rt_lines:
+        d.text((mid + 44, ty), ln, font=rt_font, fill=accent)
+        ty += 52
     d.line([(mid, y + 14), (mid, bottom - 14)], fill=a_tint, width=4)
-    inner_top = y + 84
+    inner_top = y + title_h
     inner_h = bottom - 20 - inner_top
     half = max(1, max(len(left), len(right)))
     rh = min(inner_h / half, 170)
