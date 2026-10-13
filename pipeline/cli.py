@@ -250,6 +250,26 @@ def cmd_plan(args):
     print(text)
 
 
+def cmd_email_daily(args):
+    """把指定日期的话题产物各自打包 zip，一封日报邮件发送(正文=当天内容总结)。"""
+    from . import mailer
+    res = mailer.send_report(day=args.date, recipients=args.to, dry_run=args.dry_run)
+    if not res.get("sent"):
+        print(f"[email-daily] 未发送：{res.get('reason') or res.get('dry_run') and 'dry-run 预演'}")
+        for z in res.get("zips", []):
+            print(f"  - {z}")
+        if res.get("total_bytes"):
+            print(f"  附件合计 {res['total_bytes']/1048576:.1f} MB")
+        if res.get("body"):
+            print("--- 正文预览 ---")
+            print(res["body"])
+        return
+    print(f"[email-daily] 已发送 -> {', '.join(res['to'])}，"
+          f"{len(res['zips'])} 个附件，合计 {res['total_bytes']/1048576:.1f} MB：")
+    for z in res["zips"]:
+        print(f"  - {os.path.basename(z)}")
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="dlmu", description="考研自媒体自动化流水线")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -289,6 +309,12 @@ def main(argv=None):
     p_plan.add_argument("--weeks", type=int, default=4, help="展示未来几周(默认4)")
     p_plan.add_argument("--out", help="写入 markdown 文件(如 outputs/weekly_plan.md)")
     p_plan.set_defaults(func=cmd_plan)
+
+    p_mail = sub.add_parser("email-daily", help="当天话题各自打包 zip，日报邮件发送(正文=内容总结)")
+    p_mail.add_argument("--date", help="日期 YYYY-MM-DD(默认今天)")
+    p_mail.add_argument("--to", action="append", help="收件人(可多次；默认取 MAIL_TO)")
+    p_mail.add_argument("--dry-run", action="store_true", help="只打包不发信，打印预览")
+    p_mail.set_defaults(func=cmd_email_daily)
 
     p_save = sub.add_parser("save-draft", help="按 Agent 写好的文案 JSON 落草稿+渲染卡片")
     p_save.add_argument("--file", required=True, help="JSON: [{topic_id,title,body,tags[]}]")
