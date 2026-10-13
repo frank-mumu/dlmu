@@ -179,7 +179,7 @@ def topics_brief(session, limit=30, period=None, theme_id=None):
     - writing_guide：围绕学校具体信息、不得编造的取材规范；
     - verified_facts / unverified_note：标明哪些可写、哪些严禁编造。
     """
-    from . import prompts
+    from . import prompts, style_guide
     selector.run(session, period=period)
     topics = repo.pending_topics(session, limit=limit, theme_id=theme_id)
     anchor = prompts.anchor_school(session)
@@ -227,6 +227,7 @@ def topics_brief(session, limit=30, period=None, theme_id=None):
                            "url": it.url, "scope": it.scope}
                           for it in raw_dedup],
             "writing_guide": prompts.writing_guide(theme.name if theme else "", t.kind),
+            "style_guide": style_guide.style_guide_json(),
             "verified_facts": prompts.verified_facts_block(session, anchor_school),
             "unverified_note": prompts.unverified_note(),
         })

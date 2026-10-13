@@ -9,6 +9,7 @@
 「以学校官网 / 研招网最新公布为准」代替。复核(verifier)会据此反向校验。
 """
 from ..storage import Major, repo
+from . import style_guide
 
 
 # 永远锚定的目标学校（项目定位：大连海事大学考研信息自媒体）
@@ -50,6 +51,7 @@ def writing_guide(theme_name, kind):
         f"3. 严禁编造以下精确数字：{forbidden}。"
         f"源数据未提供的，用定性描述并注明「以学校官网/研招网最新公布为准」。\n"
         f"4. 数据口径：专业代码、考试科目代码以简报 majors 为准；其余事实以 ref_items 为准。"
+        f"\n\n{style_guide.style_guide_text()}"
     )
 
 
