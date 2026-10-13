@@ -4,7 +4,7 @@ import os
 from ..config import settings
 from ..storage import Major, Topic, repo, session_scope
 from . import copywriter, selector
-from .card_renderer import render_draft
+from .card_renderer import render_draft, accent_for
 
 
 def _subtitle(topic, school):
@@ -126,9 +126,11 @@ def finalize_draft(session, topic, content):
     footer = f"{school.name} · 考研干货" if school else "考研信息 · 干货分享"
     kicker = f"{school.name} · 2026 硕士招生速览" if school else "2026 考研 · 硕士招生速览"
     out_dir = os.path.join(settings.output_dir, "cards", f"topic{topic.id}")
+    # 同一篇统一主题色（按 topic 确定性分配），保证单篇视觉一致
+    accent = accent_for(topic.id)
     assets = render_draft(out_dir, title, subtitle, pages, closing=closing, footer=footer,
                           tags=content.get("tags"), kicker=kicker,
-                          highlights=content.get("highlights"))
+                          highlights=content.get("highlights"), accent=accent)
     draft = repo.create_draft(
         session, topic_id=topic.id, title=title, body=body,
         tags=content.get("tags", []), assets=assets, platform="xiaohongshu",

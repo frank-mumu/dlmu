@@ -116,11 +116,22 @@ def build_fact_base(session, topic):
 
 
 def _page_text(pg):
-    parts = [pg.get("heading", ""), pg.get("lead", "")]
-    parts += pg.get("points", []) or []
-    if pg.get("callout"):
-        parts.append(pg.get("callout"))
-    return " ".join(str(x) for x in parts if x)
+    """递归收集页面里所有文本（兼容 list/checks/steps/compare/stat/grid/quote 各布局字段）。"""
+    chunks = []
+
+    def walk(o):
+        if isinstance(o, str):
+            if o.strip():
+                chunks.append(o)
+        elif isinstance(o, (list, tuple)):
+            for x in o:
+                walk(x)
+        elif isinstance(o, dict):
+            for v in o.values():
+                walk(v)
+
+    walk(pg)
+    return " ".join(chunks)
 
 
 def _flatten(content):

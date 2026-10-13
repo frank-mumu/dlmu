@@ -9,6 +9,7 @@
 2) runner.topics_brief 在简报里注入 style_guide 字段，让创作 Agent 一眼看到。
 """
 from ..storage import repo
+from . import layouts
 
 # 项目锚定学校（与 prompts.ANCHOR_SCHOOL_NAME 保持一致；此处独立定义避免循环导入）
 ANCHOR_SCHOOL_NAME = "大连海事大学"
@@ -177,6 +178,8 @@ def style_guide_text():
     lines.append(f"  好：{BEFORE_AFTER['good']}")
     lines.append(f"  差页：{BEFORE_AFTER['bad_page']}")
     lines.append(f"  好页：{BEFORE_AFTER['good_page']}")
+
+    lines.append("\n" + layouts.layouts_text())
     return "\n".join(lines)
 
 
@@ -194,4 +197,5 @@ def style_guide_json():
         "do": DO_LIST,
         "dont": DONT_LIST,
         "before_after": BEFORE_AFTER,
+        "page_layouts": layouts.layouts_json(),
     }
