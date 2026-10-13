@@ -98,8 +98,10 @@ def finalize_draft(session, topic, content):
     closing = content.get("closing") or _default_closing(topic, school)
     body = content.get("body") or pages_to_body(title, pages, closing)
     footer = f"{school.name} · 考研干货" if school else "考研信息 · 干货分享"
+    kicker = f"{school.name} · 2026 硕士招生速览" if school else "2026 考研 · 硕士招生速览"
     out_dir = os.path.join(settings.output_dir, "cards", f"topic{topic.id}")
-    assets = render_draft(out_dir, title, subtitle, pages, closing=closing, footer=footer)
+    assets = render_draft(out_dir, title, subtitle, pages, closing=closing, footer=footer,
+                          tags=content.get("tags"), kicker=kicker)
     draft = repo.create_draft(
         session, topic_id=topic.id, title=title, body=body,
         tags=content.get("tags", []), assets=assets, platform="xiaohongshu",
