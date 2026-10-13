@@ -251,9 +251,13 @@ def cmd_plan(args):
 
 
 def cmd_email_daily(args):
-    """把指定日期的话题产物各自打包 zip，一封日报邮件发送(正文=当天内容总结)。"""
+    """把指定日期的话题产物各自打包 zip，一封日报邮件发送(正文=当天内容总结)。
+
+    每个日期只发一次（自动去重）；确需重发加 --force。
+    """
     from . import mailer
-    res = mailer.send_report(day=args.date, recipients=args.to, dry_run=args.dry_run)
+    res = mailer.send_report(day=args.date, recipients=args.to,
+                             dry_run=args.dry_run, force=args.force)
     if not res.get("sent"):
         print(f"[email-daily] 未发送：{res.get('reason') or res.get('dry_run') and 'dry-run 预演'}")
         for z in res.get("zips", []):
@@ -314,6 +318,7 @@ def main(argv=None):
     p_mail.add_argument("--date", help="日期 YYYY-MM-DD(默认今天)")
     p_mail.add_argument("--to", action="append", help="收件人(可多次；默认取 MAIL_TO)")
     p_mail.add_argument("--dry-run", action="store_true", help="只打包不发信，打印预览")
+    p_mail.add_argument("--force", action="store_true", help="忽略已发送标记，强制重发")
     p_mail.set_defaults(func=cmd_email_daily)
 
     p_save = sub.add_parser("save-draft", help="按 Agent 写好的文案 JSON 落草稿+渲染卡片")

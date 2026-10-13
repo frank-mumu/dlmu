@@ -1,8 +1,9 @@
 """创作 Agent 运行器：选题 → 文案 → 卡片 → 草稿入库（status=pending_review）。"""
 import os
+from datetime import datetime, timedelta
 
 from ..config import settings
-from ..storage import Major, Theme, Topic, repo, session_scope
+from ..storage import Draft, Major, Theme, Topic, repo, session_scope
 from . import copywriter, selector
 from .card_renderer import render_draft, accent_for
 import re
@@ -241,7 +242,8 @@ def topics_brief(session, limit=30, period=None, theme_id=None, theme_keys=None)
     - school_anchor：永远锚定大连海事大学的可核实具体事实（专业代码/考试科目），
       公共主题也带，便于把宏观政策落到本校考生身上；
     - writing_guide：围绕学校具体信息、不得编造的取材规范；
-    - verified_facts / unverified_note：标明哪些可写、哪些严禁编造。
+    - verified_facts / unverified_note：标明哪些可写、哪些严禁编造；
+    - recent_titles：该主题近 30 天已写过的草稿标题——跨周期防重复，Agent 必须避开这些角度。
     """
     from . import prompts, style_guide
     selector.run(session, period=period, theme_keys=theme_keys)
@@ -249,6 +251,17 @@ def topics_brief(session, limit=30, period=None, theme_id=None, theme_keys=None)
     if theme_keys is not None:
         topics = [t for t in topics if t.theme and t.theme.key in theme_keys]
     anchor = prompts.anchor_school(session)
+    # 该主题近30天已写标题（一次查询按 theme 分组，避免逐 topic 查询）
+    cutoff = datetime.utcnow() - timedelta(days=30)
+    theme_recent = {}
+    recent_rows = (
+        session.query(Topic.theme_id, Draft.title)
+        .join(Draft, Draft.topic_id == Topic.id)
+        .filter(Draft.created_at >= cutoff)
+        .order_by(Draft.created_at.desc())
+        .limit(500).all())
+    for tid, dtitle in recent_rows:
+        theme_recent.setdefault(tid, []).append(dtitle)
     brief = []
     for t in topics:
         school = t.school
@@ -296,6 +309,8 @@ def topics_brief(session, limit=30, period=None, theme_id=None, theme_keys=None)
             "style_guide": style_guide.style_guide_json(),
             "verified_facts": prompts.verified_facts_block(session, anchor_school),
             "unverified_note": prompts.unverified_note(),
+            # 跨周期防重复：该主题近30天已写标题，本期必须换新角度
+            "recent_titles": theme_recent.get(theme.id, []) if theme else [],
         })
     return brief
 

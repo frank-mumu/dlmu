@@ -101,16 +101,24 @@ def build_summary(day, runs):
     return "\n".join(lines)
 
 
-def send_report(day=None, recipients=None, dry_run=False):
-    """打包当天所有话题并发送日报邮件。返回结果 dict。"""
+def send_report(day=None, recipients=None, dry_run=False, force=False):
+    """打包当天所有话题并发送日报邮件。返回结果 dict。
+
+    防重：每个日期只发一次（outputs/outbox/.sent_<YYYYMMDD>.json 标记）；
+    重复调用自动跳过，force=True 才允许重发。
+    """
     runs = today_run_dirs(day)
     if not runs:
         return {"sent": False, "reason": "当天没有话题产物"}
+    stamp = (date.fromisoformat(day) if isinstance(day, str) else (day or date.today())
+             ).strftime("%Y%m%d")
+    outbox = os.path.join(settings.output_dir, "outbox")
+    marker = os.path.join(outbox, f".sent_{stamp}.json")
+    if os.path.exists(marker) and not force:
+        return {"sent": False, "reason": f"{stamp} 的日报已发送过，跳过重复发送（确需重发加 --force）"}
     zips = [package_topic(r) for r in runs]
     body = build_summary(day, runs)
     to = recipients or MAIL_TO or DEFAULT_RECIPIENTS
-    stamp = (date.fromisoformat(day) if isinstance(day, str) else (day or date.today())
-             ).strftime("%Y%m%d")
     msg = EmailMessage()
     msg["From"] = formataddr(("考研内容流水线", SMTP_USER))
     msg["To"] = ", ".join(to)
@@ -131,4 +139,11 @@ def send_report(day=None, recipients=None, dry_run=False):
         s.starttls()
         s.login(SMTP_USER, SMTP_PASS)
         s.send_message(msg)
+    import json
+    import datetime as _dt
+    os.makedirs(outbox, exist_ok=True)
+    with open(marker, "w", encoding="utf-8") as f:
+        json.dump({"sent_at": _dt.datetime.utcnow().isoformat() + "Z",
+                   "to": to, "zips": [os.path.basename(z) for z in zips],
+                   "total_bytes": total}, f, ensure_ascii=False, indent=2)
     return {"sent": True, "to": to, "zips": zips, "total_bytes": total}
