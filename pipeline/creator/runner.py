@@ -194,6 +194,18 @@ def finalize_draft(session, topic, content):
         {"title": title, "subtitle": subtitle, "pages": pages,
          "closing": closing, "tags": content.get("tags")},
         out_dir)
+    # 发布物料：①一键复制的发布文档(标题/正文/话题标签) ②配图语音解说(女声,作发布配乐)
+    audio = None
+    try:
+        from . import narrator, publisher
+        audio = narrator.narrate(
+            {"title": title, "pages": pages, "closing": closing,
+             "tags": content.get("tags")}, out_dir)
+        publisher.render_publish_doc(
+            {"title": title, "body": body, "tags": content.get("tags"),
+             "closing": closing}, out_dir, assets=assets, audio=audio)
+    except Exception as exc:  # 配音/文档失败不影响主流程
+        print(f"[finalize_draft] 发布物料生成失败(已跳过): {exc}")
     draft.reviewed_at = datetime_now()
     return draft
 

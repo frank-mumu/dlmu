@@ -110,6 +110,43 @@ def cmd_publish(_args):
           "approved 草稿可用 `list-drafts --status approved` 查看。")
 
 
+def cmd_export(args):
+    """为已有草稿重新生成「发布文案.md」（标题/正文/话题标签/配图顺序），便于复制到平台。"""
+    from .creator import publisher
+    with session_scope() as session:
+        if args.topic:
+            try:
+                topic = session.get(Topic, int(args.topic))
+            except (ValueError, TypeError):
+                topic = None
+                for t in session.query(Topic).all():
+                    nm = (t.theme.name if t.theme else "") or t.title or ""
+                    if args.topic in nm or args.topic == (t.theme.key if t.theme else ""):
+                        topic = t
+                        break
+            drafts = [repo.latest_draft(session, topic.id)] if topic else []
+            drafts = [d for d in drafts if d]
+        else:
+            drafts = repo.list_drafts(session, status=args.status, limit=args.limit)
+        n = 0
+        for d in drafts:
+            if not d.assets:
+                continue
+            out_dir = os.path.dirname(d.assets[0])
+            audio = None
+            for ext in ("语音解说.mp3", "语音解说.m4a"):
+                p = os.path.join(out_dir, ext)
+                if os.path.exists(p):
+                    audio = p
+                    break
+            path = publisher.render_publish_doc(
+                {"title": d.title, "body": d.body, "tags": d.tags or []},
+                out_dir, assets=d.assets, audio=audio)
+            n += 1
+            print(f"[export] {d.title} -> {path}")
+        print(f"[export] 共生成 {n} 份发布文案")
+
+
 def cmd_verify(args):
     from .creator import runner, verifier
     with session_scope() as session:
@@ -191,6 +228,12 @@ def main(argv=None):
     p_verify.set_defaults(func=cmd_verify)
 
     sub.add_parser("publish").set_defaults(func=cmd_publish)
+
+    p_export = sub.add_parser("export", help="为已有草稿重新生成发布文案.md(标题/正文/话题标签/配图顺序)")
+    p_export.add_argument("--topic", help="Topic id 或 主题名；缺省导出全部草稿")
+    p_export.add_argument("--status", help="按草稿状态过滤(如 approved)")
+    p_export.add_argument("--limit", type=int, default=50)
+    p_export.set_defaults(func=cmd_export)
 
     args = parser.parse_args(argv)
     args.func(args)
