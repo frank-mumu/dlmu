@@ -6,10 +6,11 @@
 import os
 
 
-def render_publish_doc(content, out_dir, assets=None, audio=None):
+def render_publish_doc(content, out_dir, assets=None, audio=None, narration=None):
     """把一篇草稿整理成 `发布文案.md`，写入 out_dir，返回文件路径。
 
     正文仅用 body（发布用完整正文）；closing 是尾页图上的互动引导，不重复进正文。
+    口播稿(narration)随文档生成供确认；配音(audio)需确认后单独生成，不与出图绑定。
     """
     title = content.get("title", "")
     body = content.get("body", "") or ""
@@ -19,6 +20,7 @@ def render_publish_doc(content, out_dir, assets=None, audio=None):
     lines.append(f"# {title}")
     lines.append("")
     lines.append("> 复制以下内容到小红书/抖音等平台；图片按文件名序号顺序上传。")
+    lines.append("> 语音解说：确认⑤口播稿没问题后，再单独生成配音（会消耗 MiniMax 额度）。")
     lines.append("")
 
     lines.append("## ① 标题（可直接复制）")
@@ -43,10 +45,16 @@ def render_publish_doc(content, out_dir, assets=None, audio=None):
             lines.append(f"- {os.path.basename(a)}")
         lines.append("")
 
-    if audio:
-        lines.append("## ⑤ 语音解说（发布配乐）")
+    if narration:
+        lines.append("## ⑤ 语音解说口播稿（确认无误后再生成配音）")
         lines.append("")
-        lines.append(f"- 文件：{os.path.basename(audio)}（女声口播，内容与本篇一致）")
+        lines.append(narration)
+        lines.append("")
+
+    if audio:
+        lines.append("## ⑥ 语音解说文件（发布配乐）")
+        lines.append("")
+        lines.append(f"- 文件：{os.path.basename(audio)}（女声口播，内容与上方口播稿一致）")
         lines.append("")
 
     lines.append("## 合规提示")

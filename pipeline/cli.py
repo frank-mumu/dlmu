@@ -111,8 +111,8 @@ def cmd_publish(_args):
 
 
 def cmd_export(args):
-    """为已有草稿重新生成「发布文案.md」（标题/正文/话题标签/配图顺序），便于复制到平台。"""
-    from .creator import publisher
+    """为已有草稿重新生成「发布文案.md」（标题/正文/话题标签/配图顺序/口播稿），便于复制到平台。"""
+    from .creator import narrator, publisher
     with session_scope() as session:
         if args.topic:
             try:
@@ -139,9 +139,10 @@ def cmd_export(args):
                 if os.path.exists(p):
                     audio = p
                     break
+            narration = narrator.build_narration({"title": d.title, "pages": d.pages or []})
             path = publisher.render_publish_doc(
                 {"title": d.title, "body": d.body, "tags": d.tags or []},
-                out_dir, assets=d.assets, audio=audio)
+                out_dir, assets=d.assets, audio=audio, narration=narration)
             n += 1
             print(f"[export] {d.title} -> {path}")
         print(f"[export] 共生成 {n} 份发布文案")
@@ -204,8 +205,14 @@ def cmd_narrate(args):
             if not d.assets:
                 continue
             out_dir = os.path.dirname(d.assets[0])
-            audio = narrator.narrate({"title": d.title, "pages": d.pages or []}, out_dir)
+            content = {"title": d.title, "pages": d.pages or []}
+            narration = narrator.build_narration(content)
+            audio = narrator.synthesize(narration, os.path.join(out_dir, "语音解说.mp3"))
             if audio:
+                # 同步刷新发布文档：写入口播稿 + 配音文件引用
+                publisher.render_publish_doc(
+                    {"title": d.title, "body": d.body, "tags": d.tags or []},
+                    out_dir, assets=d.assets, audio=audio, narration=narration)
                 n += 1
                 print(f"[narrate] {d.title} -> {audio}")
         print(f"[narrate] 共生成 {n} 条语音解说（provider={narrator.TTS_PROVIDER}）")
