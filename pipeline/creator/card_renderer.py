@@ -502,6 +502,35 @@ _BODY_DISPATCH = {
     "quote": _body_quote,
 }
 
+WATERMARK_TEXT = "@妍之有术"
+
+
+def _add_watermark(img, text=WATERMARK_TEXT, angle=-30, alpha=28,
+                   size=34, gap_x=300, gap_y=210):
+    """给整页加半透明斜向平铺水印（背景水印， subtle 不抢内容）。
+
+    在放大的正方形画布上网格平铺文字 → 旋转 → 居中裁回原尺寸 → 低透明度合成，
+    使水印均匀覆盖全页（含白底与色块），又不影响阅读。
+    """
+    base = img.convert("RGBA")
+    W, H = base.size
+    diag = int((W * W + H * H) ** 0.5) + 4
+    layer = Image.new("RGBA", (diag, diag), (0, 0, 0, 0))
+    ld = ImageDraw.Draw(layer)
+    f = _font(size)
+    row, y = 0, 0
+    while y < diag:
+        x = (gap_x // 2) if (row % 2) else 0
+        while x < diag:
+            ld.text((x, y), text, font=f, fill=(115, 115, 115, alpha))
+            x += gap_x
+        y += gap_y
+        row += 1
+    layer = layer.rotate(angle, resample=Image.BICUBIC, center=(diag / 2, diag / 2))
+    left, top = (diag - W) // 2, (diag - H) // 2
+    layer = layer.crop((left, top, left + W, top + H))
+    return Image.alpha_composite(base, layer).convert("RGB")
+
 
 def render_content(path, page, page_no=2, total=2, footer=FOOTER, accent=ACCENT):
     layout = page.get("layout", "list")
@@ -527,6 +556,7 @@ def render_content(path, page, page_no=2, total=2, footer=FOOTER, accent=ACCENT)
 
     d.rectangle([0, H - 96, W, H - 92], fill=accent)
     _footer_band(d, footer, page_no, total, accent)
+    img = _add_watermark(img)
     img.save(path, "PNG")
 
 
@@ -567,6 +597,7 @@ def render_cover(path, title, subtitle="", footer=FOOTER, page=1, total=1,
             y += 50 * len(wrapped) + 20
 
     _footer_band(d, footer, page, total, accent)
+    img = _add_watermark(img)
     img.save(path, "PNG")
 
 
@@ -604,6 +635,7 @@ def render_closing(path, closing, footer=FOOTER, page=2, total=2, tags=None, acc
             x += cw + 18
 
     _footer_band(d, footer, page, total, accent)
+    img = _add_watermark(img)
     img.save(path, "PNG")
 
 
