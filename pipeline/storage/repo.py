@@ -112,10 +112,10 @@ def select_topic(session, topic_id):
 
 # ---------- 草稿 ----------
 def create_draft(session, topic_id, title, body, tags=None, assets=None,
-                 platform="xiaohongshu", form="image_text", generator="template"):
+                 platform="xiaohongshu", form="image_text", generator="template", pages=None):
     draft = Draft(topic_id=topic_id, platform=platform, form=form, title=title,
                   body=body, tags=tags or [], assets=assets or [], generator=generator,
-                  status="pending_review")
+                  pages=pages or [], status="pending_review")
     session.add(draft)
     session.flush()
     return draft

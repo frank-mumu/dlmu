@@ -93,6 +93,7 @@ class Draft(Base):
     body = Column(Text)
     tags = Column(JSON, default=list)
     assets = Column(JSON, default=list)                # 卡片图片路径
+    pages = Column(JSON, default=list)                 # 分页结构 [{heading, points[]}]
     generator = Column(String(16), default="template") # llm / template
     status = Column(String(16), default="pending_review")  # pending_review/approved/rejected/published
     created_at = Column(DateTime, default=utcnow)

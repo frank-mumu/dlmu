@@ -13,36 +13,98 @@ def _subtitle(topic, school):
     return "考研资讯"
 
 
-def _points_from(content, majors):
-    pts = []
-    for ln in content["body"].split("\n"):
+_BULLET_CHARS = "·-•"
+
+
+def _is_bullet(line):
+    s = line.strip()
+    if not s:
+        return False
+    return s[0] in _BULLET_CHARS or s[0].isdigit() or s[0] in "⚠📌✅🔍💡⚖💻🚦🧭🚢⚙📱🔥📢👉👍"
+
+
+def body_to_pages(body, majors=None, min_pages=3, max_pages=6):
+    """把一段正文启发式拆成 3-6 个内容页(每页 heading+points)，供 LLM 模式/兜底用。"""
+    lines = [ln.rstrip() for ln in (body or "").split("\n")]
+    pages, cur = [], {"heading": "", "points": []}
+
+    def flush():
+        nonlocal cur
+        if cur["points"] or cur["heading"]:
+            pages.append({"heading": cur["heading"] or "重点速览", "points": cur["points"]})
+        cur = {"heading": "", "points": []}
+
+    for ln in lines:
         s = ln.strip()
-        if s.startswith("·"):
-            pts.append(s.lstrip("· ").strip())
-    if not pts and majors:
-        pts = [f"{m.degree_type} {m.name}（{m.code}）" for m in majors[:8]]
-    if not pts:
-        pts = [ln.strip() for ln in content["body"].split("\n") if ln.strip()][:6]
-    seen, out = set(), []
-    for p in pts:
-        if p and p not in seen:
-            seen.add(p)
-            out.append(p)
-    return out[:8]
+        if not s:
+            continue
+        if _is_bullet(s):
+            if len(cur["points"]) >= 3:
+                flush()
+            cur["points"].append(s.lstrip("·-• ").strip())
+        elif len(s) <= 24 and not cur["heading"] and not cur["points"]:
+            cur["heading"] = s
+        else:
+            if len(cur["points"]) >= 3:
+                flush()
+            cur["points"].append(s)
+    flush()
+
+    if len(pages) > max_pages:
+        head = pages[:max_pages - 1]
+        tail = [p for pg in pages[max_pages - 1:] for p in pg["points"]]
+        head.append({"heading": "更多要点", "points": tail[:6]})
+        pages = head
+    if len(pages) < min_pages and majors:
+        for m in majors:
+            if len(pages) >= min_pages:
+                break
+            pages.append({"heading": f"{m.degree_type}·{m.name}",
+                          "points": [f"专业代码 {m.code}",
+                                     f"方向：{m.direction or '-'}",
+                                     f"科目：{m.exam_subjects or '-'}"]})
+    return pages[:max_pages]
+
+
+def pages_to_body(title, pages, closing=""):
+    parts = [title]
+    for pg in pages:
+        if pg.get("heading"):
+            parts.append(pg["heading"])
+        parts += ["· " + p for p in pg.get("points", [])]
+    if closing:
+        parts.append(closing)
+    return "\n".join(parts)
+
+
+def _default_closing(topic, school):
+    if school:
+        return f"以上就是{school.name}的考研速览～一切以官网最新招生简章为准，有问题评论区聊！"
+    return "以研招网/官网最新信息为准，收藏备用，评论区聊聊你的目标院校～"
 
 
 def finalize_draft(session, topic, content):
-    """把一段文案落成草稿并渲染卡片。content: {title, body, tags, generator}。"""
+    """把文案落成草稿并渲染分页卡片。
+
+    content: {title, subtitle?, closing?, pages?, body, tags, generator}
+    pages: [{"heading", "points":[...]}]，缺省时由 body 自动拆分(3-6 内容页)。
+    """
     school = topic.school
-    majors = (session.query(Major).filter_by(school_id=school.id).limit(12).all()
+    majors = (session.query(Major).filter_by(school_id=school.id).limit(20).all()
               if school else [])
-    points = _points_from(content, majors)
+    title = content["title"]
+    subtitle = content.get("subtitle") or _subtitle(topic, school)
+    pages = content.get("pages") or body_to_pages(content.get("body", ""), majors)
+    closing = content.get("closing") or _default_closing(topic, school)
+    body = content.get("body") or pages_to_body(title, pages, closing)
+    footer = f"{school.name} · 考研干货" if school else "考研信息 · 干货分享"
     out_dir = os.path.join(settings.output_dir, "cards", f"topic{topic.id}")
-    assets = render_draft(out_dir, content["title"], _subtitle(topic, school), points)
+    assets = render_draft(out_dir, title, subtitle, pages, closing=closing, footer=footer)
     draft = repo.create_draft(
-        session, topic_id=topic.id, title=content["title"], body=content["body"],
-        tags=content["tags"], assets=assets, platform="xiaohongshu",
-        form="image_text", generator=content.get("generator", "workbuddy"))
+        session, topic_id=topic.id, title=title, body=body,
+        tags=content.get("tags", []), assets=assets, platform="xiaohongshu",
+        form="image_text", generator=content.get("generator", "workbuddy"),
+        pages=pages)
     repo.select_topic(session, topic.id)
     return draft
 
@@ -90,7 +152,10 @@ def topics_brief(session, limit=5, period=None):
 
 
 def run_agent(drafts):
-    """Agent 模式：接收 Agent 写好的文案(list[{topic_id,title,body,tags}])，落草稿+渲染卡片。"""
+    """Agent 模式：接收 Agent 写好的分页文案，落草稿+渲染 5-8 页卡片。
+
+    drafts: [{topic_id, title, subtitle?, tags, body, closing?, pages?:[{heading,points[]}]}]
+    """
     with session_scope() as session:
         created = []
         for item in drafts:
@@ -98,8 +163,10 @@ def run_agent(drafts):
             if topic is None:
                 created.append({"topic_id": item.get("topic_id"), "error": "topic 不存在"})
                 continue
-            content = {"title": item["title"], "body": item["body"],
-                       "tags": item.get("tags", []), "generator": "workbuddy"}
+            content = {"title": item["title"], "body": item.get("body", ""),
+                       "tags": item.get("tags", []), "generator": "workbuddy",
+                       "subtitle": item.get("subtitle"), "closing": item.get("closing"),
+                       "pages": item.get("pages")}
             draft = finalize_draft(session, topic, content)
             created.append({"draft_id": draft.id, "title": draft.title,
                             "cards": draft.assets})
