@@ -14,8 +14,16 @@ from ..config import settings  # noqa: F401  确保 .env 已加载进 os.environ
 
 DEFAULT_VOICE = os.getenv("TTS_VOICE", "Tingting")
 DEFAULT_RATE = os.getenv("TTS_RATE", "205")
-# TTS_PROVIDER: say(系统,默认) | elevenlabs(自然/可克隆,需 ELEVENLABS_API_KEY + ELEVENLABS_VOICE_ID)
-TTS_PROVIDER = os.getenv("TTS_PROVIDER", "say").lower()
+# TTS_PROVIDER: minimax(默认,国内直连免费额度,自然有感情) | edge | elevenlabs | say(兜底)
+TTS_PROVIDER = os.getenv("TTS_PROVIDER", "minimax").lower()
+# MiniMax（海螺）TTS：female-shaonv=少女音(学姐感)；备选 female-yujie(御姐)/presenter_female(主播)
+MINIMAX_MODEL = os.getenv("MINIMAX_MODEL", "speech-2.8-hd")
+MINIMAX_VOICE = os.getenv("MINIMAX_VOICE", "female-shaonv")
+MINIMAX_EMOTION = os.getenv("MINIMAX_EMOTION", "")   # 可选: happy/friendly 等，留空=模型自动
+# Edge TTS：晓晓=年轻女声自然有感情；备选 zh-CN-XiaoyiNeural(活泼)/zh-CN-liaoning-XiaobeiNeural(东北俏皮)
+EDGE_VOICE = os.getenv("EDGE_VOICE", "zh-CN-XiaoxiaoNeural")
+EDGE_RATE = os.getenv("EDGE_RATE", "+12%")
+EDGE_PROXY = os.getenv("EDGE_PROXY", "")
 
 
 def _clean_for_tts(s):
@@ -87,18 +95,92 @@ def _convert_to_mp3(aiff_path, mp3_path):
     return m4a
 
 
+def synthesize_edge(text, out_path, voice=None, rate=None):
+    """微软 Edge 神经网络音色（免费、无 key）：自然有感情，远超系统 say。"""
+    try:
+        import edge_tts
+    except ImportError:
+        return None
+    import asyncio
+
+    kwargs = {"rate": rate or EDGE_RATE}
+    if EDGE_PROXY:
+        kwargs["proxy"] = EDGE_PROXY
+
+    async def _run():
+        com = edge_tts.Communicate(str(text), voice or EDGE_VOICE, **kwargs)
+        await com.save(out_path)
+
+    try:
+        asyncio.run(_run())
+    except Exception:
+        if os.path.exists(out_path):
+            os.remove(out_path)
+        return None
+    if os.path.exists(out_path) and os.path.getsize(out_path) > 1024:
+        return out_path
+    return None
+
+
+def synthesize_minimax(text, out_path, voice_id=None, model=None):
+    """MiniMax(海螺) 语音合成：国内直连、自然有感情，支持 emotion 与语气词。返回音频路径或 None。"""
+    import requests
+    key = os.getenv("MINIMAX_API_KEY", "")
+    if not key:
+        return None
+    vs = {"voice_id": voice_id or MINIMAX_VOICE, "speed": 1.0, "vol": 1.0, "pitch": 0}
+    if MINIMAX_EMOTION:
+        vs["emotion"] = MINIMAX_EMOTION
+    payload = {
+        "model": model or MINIMAX_MODEL,
+        "text": str(text),
+        "stream": False,
+        "voice_setting": vs,
+        "audio_setting": {"sample_rate": 32000, "bitrate": 128000,
+                          "format": "mp3", "channel": 1},
+        "language_boost": "Chinese",
+        "output_format": "hex",
+    }
+    resp = requests.post("https://api.minimax.cn/v1/t2a_v2",
+                         headers={"Authorization": f"Bearer {key}",
+                                  "Content-Type": "application/json"},
+                         json=payload, timeout=300)
+    resp.raise_for_status()
+    data = resp.json()
+    base = data.get("base_resp") or {}
+    if base.get("status_code", -1) != 0:
+        raise RuntimeError(f"MiniMax TTS 失败: {base.get('status_msg')}")
+    audio_hex = (data.get("data") or {}).get("audio")
+    if not audio_hex:
+        return None
+    with open(out_path, "wb") as f:
+        f.write(bytes.fromhex(audio_hex))
+    return out_path
+
+
 def synthesize(text, out_path, voice=DEFAULT_VOICE, rate=DEFAULT_RATE):
     """把口播稿合成为音频文件，返回生成的音频路径（失败返回 None）。
 
-    provider=elevenlabs 时优先用 ElevenLabs（自然/可克隆音色）；缺 key/voice 则回退系统 say。
+    分派顺序：minimax(有 key) → elevenlabs(有 key) → edge(免费,需联网) → say(系统兜底)。
     """
     if not text:
         return None
-    if os.getenv("TTS_PROVIDER", "say").lower() == "elevenlabs":
+    provider = os.getenv("TTS_PROVIDER", "minimax").lower()
+    if provider == "elevenlabs":
         r = synthesize_elevenlabs(text, out_path)
         if r:
             return r
-        print("[narrator] ElevenLabs 不可用(缺 key/voice_id?)，回退系统 say")
+        print("[narrator] ElevenLabs 不可用(缺 key/voice_id?)，降级 Edge/系统音")
+    if provider == "minimax":
+        r = synthesize_minimax(text, out_path)
+        if r:
+            return r
+        print("[narrator] MiniMax 不可用(缺 key?)，降级 Edge/系统音")
+    if provider not in ("say", "minimax", "elevenlabs"):
+        r = synthesize_edge(text, out_path)
+        if r:
+            return r
+        print("[narrator] Edge TTS 不可用(离线/被墙?)，回退系统 say")
     if not shutil.which("say"):
         return None
     aiff = out_path + ".aiff"
