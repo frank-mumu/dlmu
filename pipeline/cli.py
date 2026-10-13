@@ -25,7 +25,32 @@ def cmd_fetch(args):
 
 
 def cmd_create(args):
-    print(f"[create] {create_run(limit=args.limit)}")
+    print(f"[create] {create_run(limit=args.limit, period=args.period)}")
+
+
+def cmd_select(args):
+    import json
+    from .creator import runner
+    with session_scope() as session:
+        brief = runner.topics_brief(session, limit=args.limit, period=args.period)
+    text = json.dumps(brief, ensure_ascii=False, indent=2)
+    if args.out:
+        import os
+        os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
+        with open(args.out, "w", encoding="utf-8") as f:
+            f.write(text)
+        print(f"[select] {len(brief)} 个选题已写入 {args.out}")
+    else:
+        print(text)
+
+
+def cmd_save_draft(args):
+    import json
+    from .creator import runner
+    with open(args.file, encoding="utf-8") as f:
+        drafts = json.load(f)
+    result = runner.run_agent(drafts)
+    print("[save-draft] " + json.dumps(result, ensure_ascii=False))
 
 
 def cmd_list_drafts(args):
@@ -55,9 +80,20 @@ def main(argv=None):
     p_fetch.add_argument("--pool", nargs="*", help="目标学校池")
     p_fetch.set_defaults(func=cmd_fetch)
 
-    p_create = sub.add_parser("create", help="运行创作 Agent")
+    p_create = sub.add_parser("create", help="运行创作 Agent(外部 LLM)")
     p_create.add_argument("--limit", type=int, default=3)
+    p_create.add_argument("--period", help="期号(默认今天)，用于标题去重")
     p_create.set_defaults(func=cmd_create)
+
+    p_select = sub.add_parser("select", help="产出候选选题简报(JSON)，供创作 Agent 写文案")
+    p_select.add_argument("--limit", type=int, default=5)
+    p_select.add_argument("--period", help="期号(默认今天)")
+    p_select.add_argument("--out", help="简报输出文件(默认打印到 stdout)")
+    p_select.set_defaults(func=cmd_select)
+
+    p_save = sub.add_parser("save-draft", help="按 Agent 写好的文案 JSON 落草稿+渲染卡片")
+    p_save.add_argument("--file", required=True, help="JSON: [{topic_id,title,body,tags[]}]")
+    p_save.set_defaults(func=cmd_save_draft)
 
     p_list = sub.add_parser("list-drafts")
     p_list.add_argument("--status")

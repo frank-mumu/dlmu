@@ -32,6 +32,16 @@ python -m pipeline.cli list-drafts
 接入大模型：在 `.env` 填 `LLM_BASE_URL / LLM_API_KEY / LLM_MODEL`（OpenAI 兼容，指向你已有模型网关），
 创作即自动生成正式文案；否则输出模板占位内容。
 
+## 两种文案生成方式
+
+- **外部 LLM（`create`）**：调 `.env` 里配置的 OpenAI 兼容接口生成文案（需要 LLM key）。
+- **WorkBuddy Agent（`select` + `save-draft`，推荐，无需任何 LLM key）**：
+  1. `python -m pipeline.cli select --limit 3 --out outputs/agent_brief.json` 导出候选选题简报（含学校/专业/科目）；
+  2. 由 WorkBuddy（内置大模型）读简报、亲自写小红书文案，存成 `outputs/agent_drafts.json`（`[{topic_id,title,body,tags[]}]`）；
+  3. `python -m pipeline.cli save-draft --file outputs/agent_drafts.json` 落草稿（`generator=workbuddy`）并渲染图文卡片。
+
+已配置**定时任务「dlmu 考研文案自动生成」**（每 2 天 09:00 自动跑：采集→选题→Agent 写文案→草稿+卡片），可在自动化管理里调整频率或暂停。
+
 ## 目录
 
 ```
