@@ -23,27 +23,49 @@ def _is_bullet(line):
     return s[0] in _BULLET_CHARS or s[0].isdigit() or s[0] in "⚠📌✅🔍💡⚖💻🚦🧭🚢⚙📱🔥📢👉👍"
 
 
+_CALLOUT_PREFIX = ("⚠", "💡", "📌", "重点", "提示", "注意", "避坑", "收藏")
+
+
+def _clean_callout(s):
+    c = s
+    for pre in ("重点提示", "温馨提示", "避坑提醒", "避坑", "注意", "提示", "重点"):
+        if c.startswith(pre):
+            c = c[len(pre):].lstrip("：: 　")
+            break
+    return c.lstrip("⚠💡📌 ").strip() or s
+
+
 def body_to_pages(body, majors=None, min_pages=3, max_pages=6):
-    """把一段正文启发式拆成 3-6 个内容页(每页 heading+points)，供 LLM 模式/兜底用。"""
+    """把一段正文启发式拆成 3-6 个内容页(每页 heading/lead/points/callout)，LLM 模式/兜底用。"""
     lines = [ln.rstrip() for ln in (body or "").split("\n")]
-    pages, cur = [], {"heading": "", "points": []}
+    pages, cur = [], {"heading": "", "lead": "", "points": [], "callout": ""}
 
     def flush():
         nonlocal cur
-        if cur["points"] or cur["heading"]:
-            pages.append({"heading": cur["heading"] or "重点速览", "points": cur["points"]})
-        cur = {"heading": "", "points": []}
+        if cur["points"] or cur["heading"] or cur["lead"]:
+            pg = {"heading": cur["heading"] or "重点速览", "points": cur["points"]}
+            if cur["lead"]:
+                pg["lead"] = cur["lead"]
+            if cur["callout"]:
+                pg["callout"] = cur["callout"]
+            pages.append(pg)
+        cur = {"heading": "", "lead": "", "points": [], "callout": ""}
 
     for ln in lines:
         s = ln.strip()
         if not s:
             continue
+        if any(s.startswith(x) for x in _CALLOUT_PREFIX):
+            cur["callout"] = _clean_callout(s)
+            continue
         if _is_bullet(s):
             if len(cur["points"]) >= 3:
                 flush()
             cur["points"].append(s.lstrip("·-• ").strip())
-        elif len(s) <= 24 and not cur["heading"] and not cur["points"]:
+        elif len(s) <= 24 and not cur["heading"] and not cur["lead"] and not cur["points"]:
             cur["heading"] = s
+        elif len(s) <= 70 and not cur["lead"] and not cur["points"]:
+            cur["lead"] = s
         else:
             if len(cur["points"]) >= 3:
                 flush()
@@ -101,7 +123,8 @@ def finalize_draft(session, topic, content):
     kicker = f"{school.name} · 2026 硕士招生速览" if school else "2026 考研 · 硕士招生速览"
     out_dir = os.path.join(settings.output_dir, "cards", f"topic{topic.id}")
     assets = render_draft(out_dir, title, subtitle, pages, closing=closing, footer=footer,
-                          tags=content.get("tags"), kicker=kicker)
+                          tags=content.get("tags"), kicker=kicker,
+                          highlights=content.get("highlights"))
     draft = repo.create_draft(
         session, topic_id=topic.id, title=title, body=body,
         tags=content.get("tags", []), assets=assets, platform="xiaohongshu",
@@ -168,6 +191,7 @@ def run_agent(drafts):
             content = {"title": item["title"], "body": item.get("body", ""),
                        "tags": item.get("tags", []), "generator": "workbuddy",
                        "subtitle": item.get("subtitle"), "closing": item.get("closing"),
+                       "highlights": item.get("highlights"),
                        "pages": item.get("pages")}
             draft = finalize_draft(session, topic, content)
             created.append({"draft_id": draft.id, "title": draft.title,
