@@ -274,6 +274,30 @@ def cmd_email_daily(args):
         print(f"  - {os.path.basename(z)}")
 
 
+def cmd_sync_library(args):
+    """采集素材库 ↔ 团队资料库 双向同步。
+
+    默认：本地 SQLite → 资料库（每主题一篇素材文档，团队可浏览/复核可引用）。
+    --from-library：资料库 → 本地 SQLite（换电脑时恢复数据）。
+    """
+    from . import library_sync
+    if args.from_library:
+        res = library_sync.sync_from()
+        print(f"[sync-library] 资料库→本地：读回 {res['restored_sections']} 节，"
+              f"新增 {res['new_items']} 条 raw_items")
+        return
+    res = library_sync.sync_to()
+    if not res.get("ok"):
+        print(f"[sync-library] 失败：{res.get('error')}")
+        return
+    print(f"[sync-library] 本地→资料库：同步 {len(res['synced'])} 个主题文档"
+          f"（失败 {len(res['failed'])}）")
+    for item in res["synced"]:
+        print(f"  - {item['theme']}: {item['items']} 条")
+    for k, link in res.get("links", {}).items():
+        print(f"  {k} -> {link}")
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="dlmu", description="考研自媒体自动化流水线")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -320,6 +344,11 @@ def main(argv=None):
     p_mail.add_argument("--dry-run", action="store_true", help="只打包不发信，打印预览")
     p_mail.add_argument("--force", action="store_true", help="忽略已发送标记，强制重发")
     p_mail.set_defaults(func=cmd_email_daily)
+
+    p_sync = sub.add_parser("sync-library", help="采集素材库↔团队资料库双向同步")
+    p_sync.add_argument("--from-library", action="store_true",
+                        help="资料库→本地(换机恢复)；缺省为 本地→资料库")
+    p_sync.set_defaults(func=cmd_sync_library)
 
     p_save = sub.add_parser("save-draft", help="按 Agent 写好的文案 JSON 落草稿+渲染卡片")
     p_save.add_argument("--file", required=True, help="JSON: [{topic_id,title,body,tags[]}]")

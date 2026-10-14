@@ -64,7 +64,12 @@ def build_fact_base(session, topic):
             if mm:
                 subject_set.add(mm.group(1))
 
-    # 原始素材：主题标签下的公共素材 + 锚定学校的素材
+    # 原始素材：主题标签下的公共素材 + 锚定学校的素材（附资料库对应文章链接，供报告引用）
+    try:
+        from .. import library_sync
+        lib_links = library_sync.library_links()
+    except Exception:
+        lib_links = {}
     raw = []
     theme_key = topic.theme.key if topic.theme else None
     if theme_key:
@@ -109,7 +114,9 @@ def build_fact_base(session, topic):
         "major_by_code": major_by_code,
         "subject_set": subject_set,
         "raw_items": [{"title": it.title, "scope": it.scope, "theme_key": it.theme_key,
-                       "content": (it.content or "")[:800]} for it in raw_dedup],
+                       "content": (it.content or "")[:800],
+                       "library_url": lib_links.get(it.theme_key)}
+                      for it in raw_dedup],
         "sources_blob": sources_blob,
         "school_tokens": school_tokens,
     }
@@ -333,7 +340,11 @@ def _render_md(report, topic, content):
                      f"，专业目录 {fb['majors_count']} 条（已核实）")
     lines.append(f"- 全网抓取素材：{fb['raw_items_count']} 条（按主题/学校检索）")
     for it in fb["raw_items"]:
-        lines.append(f"  - [{it['scope']}/{it['theme_key']}] {it['title']}")
+        if it.get("library_url"):
+            lines.append(f"  - [{it['scope']}/{it['theme_key']}] "
+                         f"[{it['title']}]({it['library_url']})（资料库原文）")
+        else:
+            lines.append(f"  - [{it['scope']}/{it['theme_key']}] {it['title']}")
     lines.append("")
     lines.append("> 复核口径：专业代码/考试科目以数据库专业目录为准；其余事实以全网抓取素材为准。"
                  "凡源数据未提供的精确数字（招生人数/分数线/报录比/学费等）均不得编造。")
