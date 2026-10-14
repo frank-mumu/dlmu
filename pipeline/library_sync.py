@@ -85,7 +85,7 @@ def _theme_doc_title(theme_key, theme_name):
 
 
 def _ensure_theme_doc(m, folder_id, theme_key, theme_name):
-    """取(或建)某主题的素材库文档节点。"""
+    """取(或建)某主题的素材库文档（置于 采集素材库/<编号_主题名>/ 下）。"""
     docs = m.setdefault("themes", {})
     node = docs.get(theme_key)
     if node:
@@ -93,12 +93,28 @@ def _ensure_theme_doc(m, folder_id, theme_key, theme_name):
                     "--node-id", node])
         if '"kind":"doc"' in info.replace(" ", "") or '"kind": "doc"' in info:
             return node
+    # 主题子文件夹（编号_主题名），与图文创作库/outputs.cards 目录同名
+    with session_scope() as session:
+        from .storage import RawItem  # noqa: F401
+        active = repo.active_themes(session)
+    no = next((i for i, t in enumerate(active, 1) if t.key == theme_key), None)
+    if theme_key == "_base":
+        folder_title = "基础数据"
+    elif no:
+        folder_title = f"{no:02d}_{THEME_CN_FALLBACK.get(theme_key, theme_name)}"
+    else:
+        folder_title = THEME_CN_FALLBACK.get(theme_key, theme_name)
+    sub = _sh(["python3", f"{LIB}/manage/create_folder.py",
+               "--title", folder_title, "--space-id", SPACE_ID,
+               "--parent-id", folder_id])
+    mm = re.search(r"KS_FOLDER_CREATE\t(\S+)\t", sub)
+    sub_id = mm.group(1) if mm else folder_id
     title = _theme_doc_title(theme_key, theme_name)
     node = _find_node_by_title(title)
     if not node:
         out = _sh(["python3", f"{LIB}/doc/create_doc.py",
                    "--title", title, "--space-id", SPACE_ID,
-                   "--parent-id", folder_id,
+                   "--parent-id", sub_id,
                    "--content", f"# {title}\n\n> 由流水线自动维护，请勿手工编辑。"])
         mm = re.search(r"KS_DOC_CREATE\t(\S+)\t", out)
         node = mm.group(1) if mm else None
