@@ -106,6 +106,22 @@ def _tokenize(para):
     return tokens
 
 
+# 不允许出现在行首的标点（否则会出现「孤零零一个逗号/句号占一行」的观感问题）
+_NO_LINE_START = "，。、！？；：）】》」』…·%"
+
+
+def _avoid_leading_punct(lines):
+    """把行首的收尾标点拉回上一行末尾，避免标点单独起行。"""
+    out = list(lines)
+    for i in range(1, len(out)):
+        if not out[i] or out[i - 1] is None:
+            continue
+        while out[i] and out[i][0] in _NO_LINE_START:
+            out[i - 1] += out[i][0]
+            out[i] = out[i][1:]
+    return out
+
+
 def _wrap(draw, text, font, max_w):
     lines = []
     for para in str(text).split("\n"):
@@ -131,7 +147,41 @@ def _wrap(draw, text, font, max_w):
             else:
                 cur = tok
         lines.append(cur)
-    return lines
+    return _avoid_leading_punct(lines)
+
+
+# 封面标题的平衡断行：优先断在标点后，避免把词劈开、避免标点起行
+_TITLE_BREAK_AFTER = "，。！？；：、·…"
+_NO_BREAK_BEFORE = "的了与和及在就都是才也还不没得地着过吗呢吧呀啊们个"
+
+
+def _split_title(draw, text, font, max_w):
+    """把封面标题切成 1-2 行：能一行放下一行；否则挑「最平衡且不劈词」的断点。"""
+    text = str(text).strip()
+    if "\n" in text:
+        return [t.strip() for t in text.split("\n") if t.strip()][:2]
+    if draw.textlength(text, font=font) <= max_w:
+        return [text]
+    n = len(text)
+    best, best_cost = None, None
+    for i in range(1, n):
+        left, right = text[:i], text[i:]
+        if draw.textlength(left, font=font) > max_w:
+            continue
+        if draw.textlength(right, font=font) > max_w:
+            continue
+        cost = abs(i - n / 2) / max(1, n)
+        if text[i - 1] in _TITLE_BREAK_AFTER:
+            cost -= 0.6
+        if text[i] in _TITLE_BREAK_AFTER:
+            cost += 0.8
+        if text[i] in _NO_BREAK_BEFORE:
+            cost += 0.4
+        if best_cost is None or cost < best_cost:
+            best, best_cost = i, cost
+    if best is None:
+        return _wrap(draw, text, font, max_w)[:2]
+    return [text[:best], text[best:]]
 
 
 def _cx(draw, text, font):
@@ -577,7 +627,7 @@ def render_cover(path, title, subtitle="", footer=FOOTER, page=1, total=1,
     f_kick, f_title = _font(36), _font(80)
     if kicker:
         _text(d, (_cx(d, kicker, f_kick), 168), kicker, font=f_kick, fill=WHITE)
-    lines = _wrap(d, title, f_title, W - 220)[:4]
+    lines = _split_title(d, title, f_title, W - 220)[:2]
     line_h = 104
     y = 240 + (630 - len(lines) * line_h) / 2
     for ln in lines:
