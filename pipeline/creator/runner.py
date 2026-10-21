@@ -58,6 +58,18 @@ def topic_stamp(topic):
         return "00000000"
 
 
+def _cycle_year(topic):
+    """招生年度：9 月起进入下一年招生周期（如 2026-10 的内容属 2027 招生）。"""
+    for src in (getattr(topic, "period", None), None):
+        m = re.search(r"(\d{4})", str(src or ""))
+        if m:
+            y = int(m.group(1))
+            mm = re.search(r"\d{4}[-/](\d{1,2})", str(src or ""))
+            return y + 1 if (mm and int(mm.group(1)) >= 9) else y
+    now = datetime.now()
+    return now.year + 1 if now.month >= 9 else now.year
+
+
 def _subtitle(topic, school):
     if school:
         return " ".join(x for x in [school.province or "", school.level or ""] if x).strip()
@@ -175,7 +187,9 @@ def finalize_draft(session, topic, content):
     closing = content.get("closing") or _default_closing(topic, school)
     body = content.get("body") or pages_to_body(title, pages, closing)
     footer = f"{school.name} · 考研干货" if school else "考研信息 · 干货分享"
-    kicker = f"{school.name} · 2026 硕士招生速览" if school else "2026 考研 · 硕士招生速览"
+    cycle = _cycle_year(topic)
+    kicker = (f"{school.name} · {cycle} 硕士招生速览" if school
+              else f"{cycle} 考研 · 硕士招生速览")
     out_dir = topic_run_dir(session, topic, title)
     # 同一篇统一主题色（按 topic 确定性分配），保证单篇视觉一致
     accent = accent_for(topic.id)
